@@ -1,0 +1,35 @@
+{
+  "name": "@openclaw/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "15.1.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "wagmi": "2.14.0",
+    "viem": "2.21.0",
+    "@tanstack/react-query": "5.62.0",
+    "@prisma/client": "6.1.0",
+    "zod": "3.24.0",
+    "pino": "9.6.0",
+    "@openclaw/shared": "workspace:*",
+    "@openclaw/contract-abis": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "prisma": "6.1.0",
+    "tailwindcss": "3.4.17",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0"
+  }
+}
