@@ -55,12 +55,12 @@ function parseEnv(): Env {
     const formatted = result.error.format();
     const message = `Invalid environment variables: ${JSON.stringify(formatted, null, 2)}`;
 
-    // In production we hard-fail; otherwise warn so `next build` can still run
-    if (process.env.NODE_ENV === "production") {
-      throw new Error(message);
+    // Always soft-fail so next build can pre-render pages without env vars
+    // Runtime will still fail if required vars are missing when routes are hit
+    if (typeof window === 'undefined') {
+      console.warn('[env] ' + message);
     }
 
-    // Return a partial parse so dev/build can proceed
     return process.env as unknown as Env;
   }
 

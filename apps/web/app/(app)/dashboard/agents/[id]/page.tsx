@@ -31,7 +31,7 @@ const MOCK_AGENT = {
   name: 'CryptoSage',
   description:
     'An AI agent focused on cryptocurrency analysis, DeFi insights, and blockchain technology discussions.',
-  status: 'active' as const,
+  status: 'active' as string,
   farcasterFid: 12345,
   farcasterUsername: 'cryptosage',
   onChainId: 1,
@@ -85,7 +85,9 @@ const statusColors: Record<string, string> = {
 
 export default function AgentDetailPage() {
   const params = useParams();
-  const _id = params.id as string;
+  const id = params.id as string;
+  // TODO: Replace with useAgent(id) hook when API is connected
+  void id;
   const agent = MOCK_AGENT;
 
   return (

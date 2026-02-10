@@ -91,7 +91,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     const { page, limit } = parsed.data;
-    const skip = (page - 1) * limit;
+    // const skip = (page - 1) * limit; // TODO: use with Prisma query
 
     // TODO: Replace with actual Prisma query once schema is available
     // const [receipts, total] = await Promise.all([

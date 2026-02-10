@@ -174,11 +174,11 @@ function SkillCard({
 
         {isLocked ? (
           <PaymentButton
-            status="idle"
-            amount="$0.99"
-            onPay={onPurchase}
-            className="w-full"
-          />
+            endpoint={`/api/skills/premium/${skill.id}`}
+            onSuccess={() => onPurchase()}
+          >
+            Unlock — $0.99
+          </PaymentButton>
         ) : (
           <Button variant="outline" size="sm" className="w-full" disabled>
             {skill.premium ? 'Unlocked' : 'Available'}

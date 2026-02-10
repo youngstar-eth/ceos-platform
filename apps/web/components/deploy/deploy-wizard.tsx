@@ -9,7 +9,7 @@ import {
 } from '@/components/agent-builder/agent-config-form';
 import { ConfirmationCard } from './confirmation-card';
 import { TransactionStatus } from './transaction-status';
-import { useDeploy, type DeployStatus } from '@/hooks/use-deploy';
+import { useDeploy } from '@/hooks/use-deploy';
 import { cn } from '@/lib/utils';
 
 const STEPS = [
@@ -140,11 +140,11 @@ export function DeployWizard() {
         ) : (
           <Button
             onClick={handleDeploy}
-            disabled={isDeploying || status === 'confirmed'}
+            disabled={isDeploying || (status as string) === 'confirmed'}
             className="brand-gradient text-white hover:opacity-90"
           >
             <Rocket className="h-4 w-4 mr-2" />
-            {status === 'confirmed'
+            {(status as string) === 'confirmed'
               ? 'Deployed!'
               : isDeploying
               ? 'Deploying...'

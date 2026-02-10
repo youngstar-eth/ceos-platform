@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   buildPaymentRequirements,
   getRoutePrice,
-  X402_ROUTE_PREFIXES,
 } from '@/lib/x402-config';
 
 /**
@@ -139,5 +138,10 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
  * Only runs on x402-gated route prefixes to avoid unnecessary overhead.
  */
 export const config = {
-  matcher: X402_ROUTE_PREFIXES.map((prefix) => `${prefix}/:path*`),
+  matcher: [
+    '/api/skills/premium/:path*',
+    '/api/deploy/usdc/:path*',
+    '/api/analytics/pro/:path*',
+    '/api/v1/:path*',
+  ],
 };

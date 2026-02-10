@@ -109,7 +109,8 @@ export function useX402Payment(): UseX402PaymentReturn {
         // Step 2: Sign payment
         setStatus('signing');
 
-        const payment = await signPayment(walletClient, requirements);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const payment = await signPayment(walletClient as any, requirements);
 
         // Step 3: Retry with payment header
         setStatus('verifying');
@@ -135,17 +136,16 @@ export function useX402Payment(): UseX402PaymentReturn {
 
         if (!paidResponse.ok) {
           const body: unknown = await paidResponse.json().catch(() => null);
-          const msg =
-            body !== null &&
-            typeof body === 'object' &&
-            'error' in body &&
-            typeof (body as Record<string, unknown>).error === 'object' &&
-            (body as Record<string, Record<string, unknown>>).error !== null &&
-            'message' in (body as Record<string, Record<string, unknown>>).error
-              ? String(
-                  (body as Record<string, Record<string, string>>).error.message
-                )
-              : `Server returned ${paidResponse.status}`;
+          let msg = `Server returned ${paidResponse.status}`;
+          if (body !== null && typeof body === 'object') {
+            const b = body as Record<string, unknown>;
+            if (b.error && typeof b.error === 'object') {
+              const e = b.error as Record<string, unknown>;
+              if (typeof e.message === 'string') {
+                msg = e.message;
+              }
+            }
+          }
           throw new Error(msg);
         }
 

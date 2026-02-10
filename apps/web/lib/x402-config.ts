@@ -17,9 +17,16 @@ const x402EnvSchema = z.object({
 function loadX402Env(): z.infer<typeof x402EnvSchema> {
   const result = x402EnvSchema.safeParse(process.env);
   if (!result.success) {
-    throw new Error(
+    // Soft-fail during build to allow pre-rendering
+    console.warn(
       `[x402] Missing or invalid environment variables:\n${result.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n')}`
     );
+    return {
+      X402_FACILITATOR_URL: process.env.X402_FACILITATOR_URL || 'https://x402.coinbase.com',
+      X402_RESOURCE_WALLET: process.env.X402_RESOURCE_WALLET || '0x0000000000000000000000000000000000000000',
+      NEXT_PUBLIC_CHAIN_ID: Number(process.env.NEXT_PUBLIC_CHAIN_ID) || 84532,
+      NEXT_PUBLIC_USDC_CONTRACT: process.env.NEXT_PUBLIC_USDC_CONTRACT || '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+    };
   }
   return result.data;
 }

@@ -34,19 +34,21 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
 
     const currentEpoch = getCurrentEpoch();
-    const latestScore = scores[0];
+    const latestScore = scores[0] ?? null;
 
     return successResponse({
       address,
       currentEpoch,
-      latestScore: {
-        epoch: latestScore.epoch,
-        engagement: latestScore.engagement,
-        growth: latestScore.growth,
-        quality: latestScore.quality,
-        uptime: latestScore.uptime,
-        totalScore: latestScore.totalScore,
-      },
+      latestScore: latestScore
+        ? {
+            epoch: latestScore.epoch,
+            engagement: latestScore.engagement,
+            growth: latestScore.growth,
+            quality: latestScore.quality,
+            uptime: latestScore.uptime,
+            totalScore: latestScore.totalScore,
+          }
+        : null,
       history: scores.map((s) => ({
         epoch: s.epoch,
         engagement: s.engagement,
