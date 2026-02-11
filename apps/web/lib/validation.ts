@@ -24,8 +24,8 @@ export const paginationSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const agentPersonaSchema = z.object({
-  tone: z.string().min(1).max(200),
-  style: z.string().min(1).max(200),
+  tone: z.string().min(1).max(2000),
+  style: z.string().min(1).max(500),
   topics: z.array(z.string().min(1).max(100)).min(1).max(20),
   language: z.string().min(2).max(10),
   customPrompt: z.string().max(2000).optional(),
@@ -64,7 +64,7 @@ export const updateAgentSchema = z.object({
 
 export const deployAgentSchema = z.object({
   agentId: z.string().cuid(),
-  txHash: txHash,
+  txHash: txHash.optional(),
 });
 
 // ---------------------------------------------------------------------------

@@ -5,21 +5,23 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 export interface Agent {
   id: string;
   name: string;
-  description: string;
-  status: 'active' | 'paused' | 'terminated' | 'deploying';
+  description: string | null;
+  status: string;
   farcasterFid: number | null;
   farcasterUsername: string | null;
   onChainId: number | null;
-  personality: string;
+  personality: string | null;
+  pfpUrl: string | null;
+  bannerUrl: string | null;
   skills: string[];
-  strategy: 'balanced' | 'text-heavy' | 'media-heavy';
+  strategy: string | Record<string, unknown>;
   metrics: {
     totalCasts: number;
     totalLikes: number;
     totalRecasts: number;
     totalFollowers: number;
     engagementRate: number;
-  };
+  } | null;
   createdAt: string;
   updatedAt: string;
 }

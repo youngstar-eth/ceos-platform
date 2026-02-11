@@ -1,4 +1,5 @@
 import IORedis from 'ioredis';
+import { PrismaClient } from '@prisma/client';
 import { config, logger } from './config.js';
 import { ContentPipeline } from './core/content-pipeline.js';
 import { AgentScheduler } from './core/scheduler.js';
@@ -12,6 +13,10 @@ import { createContentWorker } from '../workers/content-worker.js';
 import { createMetricsWorker } from '../workers/metrics-worker.js';
 import { createPostingWorker } from '../workers/posting-worker.js';
 import { createSchedulerWorker } from '../workers/scheduler.js';
+import { getStrategy } from './strategies/posting.js';
+
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+const AGENT_POLL_INTERVAL_MS = 60 * 1000; // Check for new agents every 60 seconds
 
 interface RuntimeContext {
   redis: IORedis;
@@ -22,11 +27,79 @@ interface RuntimeContext {
   openrouter: OpenRouterClient;
   falAi: FalAiClient;
   neynar: NeynarClient;
-  baseChain: BaseChainClient;
+  baseChain: BaseChainClient | null;
 }
 
 let runtimeContext: RuntimeContext | null = null;
 let isShuttingDown = false;
+let agentPollTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Load all ACTIVE agents from the database and schedule them.
+ * Also polls periodically for newly deployed agents.
+ */
+async function loadAndScheduleAgents(
+  prisma: PrismaClient,
+  engine: AgentEngine,
+): Promise<void> {
+  try {
+    const agents = await prisma.agent.findMany({
+      where: { status: 'ACTIVE' },
+    });
+
+    logger.info({ agentCount: agents.length }, 'Found active agents in database');
+
+    const runningIds = new Set(engine.getRunningAgentIds());
+
+    for (const agent of agents) {
+      // Skip already running agents
+      if (runningIds.has(agent.id)) {
+        continue;
+      }
+
+      // Skip agents without a valid signer
+      if (!agent.signerUuid || agent.signerUuid.startsWith('demo-signer-')) {
+        logger.debug({ agentId: agent.id, name: agent.name }, 'Skipping agent without valid signer');
+        continue;
+      }
+
+      const persona = typeof agent.persona === 'string'
+        ? agent.persona
+        : (agent.persona as Record<string, unknown>)?.description as string ?? '';
+
+      const strategyJson = agent.strategy as Record<string, unknown>;
+      const strategyName = (strategyJson?.name as string) ?? 'Balanced';
+
+      try {
+        const strategy = getStrategy(strategyName);
+
+        await engine.startAgent({
+          id: agent.id,
+          name: agent.name,
+          persona,
+          signerUuid: agent.signerUuid,
+          fid: agent.fid ?? 0,
+          strategy,
+        });
+
+        logger.info(
+          { agentId: agent.id, name: agent.name, strategy: strategyName },
+          'Agent scheduled for autonomous posting',
+        );
+      } catch (error) {
+        logger.error(
+          { agentId: agent.id, error: error instanceof Error ? error.message : String(error) },
+          'Failed to schedule agent',
+        );
+      }
+    }
+  } catch (error) {
+    logger.error(
+      { error: error instanceof Error ? error.message : String(error) },
+      'Failed to load agents from database',
+    );
+  }
+}
 
 async function bootstrap(): Promise<RuntimeContext> {
   logger.info({ env: config.NODE_ENV, chainId: config.NEXT_PUBLIC_CHAIN_ID }, 'Bootstrapping OpenClaw Agent Runtime');
@@ -41,18 +114,29 @@ async function bootstrap(): Promise<RuntimeContext> {
   await redis.connect();
   logger.info('Redis connected');
 
-  // 2. Initialize integration clients
+  // 2. Initialize Prisma for agent discovery
+  const prisma = new PrismaClient();
+  logger.info('Database connected');
+
+  // 3. Initialize integration clients
   const openrouter = new OpenRouterClient(config.OPENROUTER_API_KEY);
   const falAi = new FalAiClient(config.FAL_KEY);
   const neynar = new NeynarClient(config.NEYNAR_API_KEY);
-  const baseChain = new BaseChainClient({
-    rpcUrl: config.BASE_RPC_URL,
-    chainId: config.NEXT_PUBLIC_CHAIN_ID,
-  });
 
-  logger.info('Integration clients initialized');
+  let baseChain: BaseChainClient | null = null;
+  if (!DEMO_MODE && config.BASE_RPC_URL) {
+    baseChain = new BaseChainClient({
+      rpcUrl: config.BASE_RPC_URL,
+      chainId: config.NEXT_PUBLIC_CHAIN_ID,
+    });
+    logger.info('BaseChainClient initialized');
+  } else {
+    logger.info('DEMO MODE: Skipping BaseChainClient initialization');
+  }
 
-  // 3. Initialize core modules
+  logger.info({ demoMode: DEMO_MODE }, 'Integration clients initialized');
+
+  // 4. Initialize core modules
   const pipeline = new ContentPipeline(openrouter, falAi);
   const scheduler = new AgentScheduler(redis);
   const engine = new AgentEngine(pipeline, scheduler);
@@ -60,7 +144,7 @@ async function bootstrap(): Promise<RuntimeContext> {
 
   logger.info('Core modules initialized');
 
-  // 4. Initialize BullMQ workers
+  // 5. Initialize BullMQ workers
   const contentWorker = createContentWorker(redis, config.OPENROUTER_API_KEY, config.FAL_KEY);
   const metricsWorker = createMetricsWorker(redis);
   const postingWorker = createPostingWorker(redis, config.NEYNAR_API_KEY);
@@ -68,7 +152,22 @@ async function bootstrap(): Promise<RuntimeContext> {
 
   logger.info('BullMQ workers initialized');
 
-  // 5. Register graceful shutdown
+  // 6. Load ACTIVE agents from database and schedule them
+  await loadAndScheduleAgents(prisma, engine);
+
+  // 7. Start polling for new agents (detects newly deployed agents)
+  agentPollTimer = setInterval(() => {
+    if (!isShuttingDown) {
+      void loadAndScheduleAgents(prisma, engine);
+    }
+  }, AGENT_POLL_INTERVAL_MS);
+
+  logger.info(
+    { pollIntervalMs: AGENT_POLL_INTERVAL_MS },
+    'Agent discovery polling started',
+  );
+
+  // 8. Register graceful shutdown
   const shutdown = async (signal: string) => {
     if (isShuttingDown) {
       logger.warn({ signal }, 'Shutdown already in progress, forcing exit');
@@ -77,6 +176,12 @@ async function bootstrap(): Promise<RuntimeContext> {
 
     isShuttingDown = true;
     logger.info({ signal }, 'Graceful shutdown initiated');
+
+    // Stop polling
+    if (agentPollTimer) {
+      clearInterval(agentPollTimer);
+      agentPollTimer = null;
+    }
 
     const shutdownTimeout = setTimeout(() => {
       logger.error('Shutdown timed out after 30s, forcing exit');
@@ -104,8 +209,14 @@ async function bootstrap(): Promise<RuntimeContext> {
       // Stop Neynar polling
       neynar.stopAllPolling();
 
-      // Stop chain watchers
-      baseChain.stopAllWatchers();
+      // Stop chain watchers (skip in demo mode)
+      if (baseChain) {
+        baseChain.stopAllWatchers();
+      }
+
+      // Close database connection
+      await prisma.$disconnect();
+      logger.info('Database connection closed');
 
       // Close Redis last
       await redis.quit();
@@ -150,10 +261,13 @@ async function bootstrap(): Promise<RuntimeContext> {
 
   runtimeContext = context;
 
+  const runningAgents = engine.getRunningAgentIds();
   logger.info({
     workers: ['content', 'metrics', 'posting', 'scheduler'],
     integrations: ['openrouter', 'fal-ai', 'neynar', 'base-chain'],
-  }, 'OpenClaw Agent Runtime started successfully');
+    activeAgents: runningAgents.length,
+    agentIds: runningAgents,
+  }, 'OpenClaw Agent Runtime started — autonomous mode active');
 
   return context;
 }

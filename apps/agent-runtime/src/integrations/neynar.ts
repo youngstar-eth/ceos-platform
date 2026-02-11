@@ -57,6 +57,22 @@ interface NeynarNotificationsResponse {
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
 
+interface SignerInfo {
+  signer_uuid: string;
+  public_key: string;
+  status: 'generated' | 'pending_approval' | 'approved' | 'revoked';
+  signer_approval_url?: string;
+  fid?: number;
+}
+
+interface NeynarUser {
+  fid: number;
+  username: string;
+  display_name: string;
+  pfp_url: string;
+  custody_address: string;
+}
+
 export class NeynarClient {
   private readonly apiKey: string;
   private readonly logger: pino.Logger;
@@ -65,6 +81,186 @@ export class NeynarClient {
   constructor(apiKey: string) {
     this.apiKey = apiKey;
     this.logger = rootLogger.child({ module: 'NeynarClient' });
+  }
+
+  /**
+   * Create a new Neynar signer. Returns a signer_uuid in "generated" status.
+   * The signer must then be registered via registerSignedKey or approved via Warpcast.
+   */
+  async createSigner(): Promise<SignerInfo> {
+    this.logger.info('Creating new Neynar signer');
+
+    const response = await this.fetchWithRetry<SignerInfo>(
+      `${NEYNAR_API_BASE}/signer`,
+      { method: 'POST', body: JSON.stringify({}) },
+    );
+
+    this.logger.info(
+      { signerUuid: response.signer_uuid, status: response.status },
+      'Signer created',
+    );
+
+    return response;
+  }
+
+  /**
+   * Create a new Farcaster account with an approved signer.
+   * Uses the Neynar managed account creation flow:
+   * 1. Reserve an FID via App Wallet
+   * 2. Generate EIP-712 signature with deployer key
+   * 3. Register the account with username & metadata
+   *
+   * Requires NEYNAR_WALLET_ID and DEPLOYER_PRIVATE_KEY env vars.
+   */
+  async createFarcasterAccount(walletId: string, options: {
+    username: string;
+    displayName: string;
+    bio?: string;
+    pfpUrl?: string;
+    deployerPrivateKey: string;
+  }): Promise<{ fid: number; signerUuid: string; username: string; custodyAddress: string }> {
+    const { privateKeyToAccount } = await import('viem/accounts');
+
+    this.logger.info({ username: options.username }, 'Creating new Farcaster account');
+
+    // Step 1: Reserve an FID
+    this.logger.info('Step 1: Reserving FID...');
+    const fidResponse = await this.fetchWithRetry<{ fid: number }>(
+      `${NEYNAR_API_BASE}/user/fid`,
+      {
+        method: 'GET',
+        headers: { 'x-wallet-id': walletId },
+      },
+    );
+
+    this.logger.info({ fid: fidResponse.fid }, 'FID reserved');
+
+    // Step 2: Generate EIP-712 signature
+    this.logger.info('Step 2: Generating signature...');
+    const account = privateKeyToAccount(options.deployerPrivateKey as `0x${string}`);
+    const custodyAddress = account.address;
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
+
+    const ID_GATEWAY_ADDRESS = '0x00000000Fc25870C6eD6b6c7E41Fb078b7656f69' as const;
+
+    const signature = await account.signTypedData({
+      domain: {
+        name: 'Farcaster IdGateway',
+        version: '1',
+        chainId: 10,
+        verifyingContract: ID_GATEWAY_ADDRESS,
+      },
+      types: {
+        Register: [
+          { name: 'to', type: 'address' },
+          { name: 'recovery', type: 'address' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' },
+        ],
+      },
+      primaryType: 'Register',
+      message: {
+        to: custodyAddress,
+        recovery: custodyAddress,
+        nonce: BigInt(0),
+        deadline,
+      },
+    });
+
+    // Step 3: Register account with user details
+    this.logger.info({ fid: fidResponse.fid }, 'Step 3: Registering account...');
+    const registerBody: Record<string, unknown> = {
+      signature,
+      fid: fidResponse.fid,
+      requested_user_custody_address: custodyAddress,
+      deadline: Number(deadline),
+      fname: options.username,
+      metadata: {
+        bio: options.bio ?? 'AI agent on Farcaster | Powered by OpenClaw',
+        pfp_url: options.pfpUrl ?? '',
+        display_name: options.displayName,
+        url: '',
+      },
+    };
+
+    const registerResponse = await this.fetchWithRetry<{
+      success: boolean;
+      message: string;
+      signer: {
+        signer_uuid: string;
+        public_key: string;
+        status: string;
+        fid: number;
+      };
+    }>(
+      `${NEYNAR_API_BASE}/user`,
+      {
+        method: 'POST',
+        headers: { 'x-wallet-id': walletId },
+        body: JSON.stringify(registerBody),
+      },
+    );
+
+    this.logger.info(
+      {
+        fid: fidResponse.fid,
+        username: options.username,
+        signerUuid: registerResponse.signer?.signer_uuid,
+        signerStatus: registerResponse.signer?.status,
+      },
+      'Farcaster account created successfully',
+    );
+
+    return {
+      fid: fidResponse.fid,
+      signerUuid: registerResponse.signer?.signer_uuid ?? '',
+      username: options.username,
+      custodyAddress,
+    };
+  }
+
+  /**
+   * Look up a signer's current status.
+   */
+  async getSigner(signerUuid: string): Promise<SignerInfo> {
+    const response = await this.fetchWithRetry<SignerInfo>(
+      `${NEYNAR_API_BASE}/signer?signer_uuid=${signerUuid}`,
+      { method: 'GET' },
+    );
+
+    return response;
+  }
+
+  /**
+   * Look up a Farcaster user by FID.
+   */
+  async getUserByFid(fid: number): Promise<NeynarUser> {
+    const response = await this.fetchWithRetry<{ users: NeynarUser[] }>(
+      `${NEYNAR_API_BASE}/user/bulk?fids=${fid}`,
+      { method: 'GET' },
+    );
+
+    const user = response.users[0];
+    if (!user) {
+      throw new Error(`User with FID ${fid} not found`);
+    }
+    return user;
+  }
+
+  /**
+   * Look up a Farcaster user by username.
+   */
+  async getUserByUsername(username: string): Promise<NeynarUser> {
+    const response = await this.fetchWithRetry<{ result: { users: NeynarUser[] } }>(
+      `${NEYNAR_API_BASE}/user/search?q=${encodeURIComponent(username)}&limit=1`,
+      { method: 'GET' },
+    );
+
+    const user = response.result.users[0];
+    if (!user) {
+      throw new Error(`User "${username}" not found`);
+    }
+    return user;
   }
 
   async publishCast(
@@ -313,4 +509,4 @@ export class NeynarClient {
   }
 }
 
-export type { Cast, CastOptions, Mention };
+export type { Cast, CastOptions, Mention, SignerInfo, NeynarUser };

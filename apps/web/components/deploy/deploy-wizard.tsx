@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, ArrowRight, Rocket, Check } from 'lucide-react';
+import { useAccount, useSignMessage } from 'wagmi';
 import { Button } from '@/components/ui/button';
 import {
   AgentConfigForm,
@@ -9,14 +11,16 @@ import {
 } from '@/components/agent-builder/agent-config-form';
 import { ConfirmationCard } from './confirmation-card';
 import { TransactionStatus } from './transaction-status';
-import { useDeploy } from '@/hooks/use-deploy';
+import { useDeploy, type DeployStatus } from '@/hooks/use-deploy';
 import { cn } from '@/lib/utils';
+
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
 
 const STEPS = [
   { label: 'Persona', description: 'Define your agent identity' },
   { label: 'Skills', description: 'Choose agent capabilities' },
   { label: 'Strategy', description: 'Set content strategy' },
-  { label: 'Deploy', description: 'Deploy on-chain' },
+  { label: 'Deploy', description: DEMO_MODE ? 'Deploy (demo)' : 'Deploy on-chain' },
 ];
 
 const DEFAULT_CONFIG: AgentConfig = {
@@ -33,7 +37,17 @@ const DEFAULT_CONFIG: AgentConfig = {
 export function DeployWizard() {
   const [step, setStep] = useState(0);
   const [config, setConfig] = useState<AgentConfig>(DEFAULT_CONFIG);
-  const { deploy, status, txHash, error, reset } = useDeploy();
+  const [demoStatus, setDemoStatus] = useState<DeployStatus>('idle');
+  const [demoError, setDemoError] = useState<string | null>(null);
+  const [deployedAgentId, setDeployedAgentId] = useState<string | null>(null);
+
+  const { deploy, status: onChainStatus, txHash, error: onChainError, reset } = useDeploy();
+  const { address } = useAccount();
+  const { signMessageAsync } = useSignMessage();
+  const router = useRouter();
+
+  const status = DEMO_MODE ? demoStatus : onChainStatus;
+  const error = DEMO_MODE ? demoError : onChainError;
 
   const canProceed = (): boolean => {
     switch (step) {
@@ -50,17 +64,107 @@ export function DeployWizard() {
     }
   };
 
-  const handleDeploy = async () => {
+  const handleDemoDeploy = async () => {
+    if (!address) {
+      setDemoError('Please connect your wallet first.');
+      setDemoStatus('failed');
+      return;
+    }
+
+    try {
+      setDemoError(null);
+      setDemoStatus('preparing');
+
+      // In demo mode, skip wallet signature — use placeholder auth
+      const message = `demo-deploy:${config.persona.name}:${Date.now()}`;
+      const signature = 'demo-mode-signature';
+
+      setDemoStatus('pending');
+
+      // Step 1: Create agent config in database
+      const createRes = await fetch('/api/agents', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-wallet-address': address,
+          'x-wallet-signature': signature,
+          'x-wallet-message': message,
+        },
+        body: JSON.stringify({
+          name: config.persona.name,
+          description: config.persona.description,
+          persona: {
+            tone: config.persona.personality || 'informative',
+            style: config.persona.traits.join(', ') || 'engaging',
+            topics: config.skills.length > 0 ? config.skills : ['general'],
+            language: 'en',
+            customPrompt: config.persona.personality,
+          },
+          skills: config.skills,
+          strategy: {
+            postingFrequency: config.strategy === 'media-heavy' ? 8 : config.strategy === 'text-heavy' ? 4 : 6,
+            engagementMode: 'active' as const,
+            trendTracking: true,
+            replyProbability: 0.3,
+            mediaGeneration: config.strategy !== 'text-heavy',
+          },
+        }),
+      });
+
+      if (!createRes.ok) {
+        const err = await createRes.json();
+        throw new Error(err.error?.message ?? 'Failed to create agent');
+      }
+
+      const { data: agent } = await createRes.json();
+
+      // Step 2: Deploy the agent (demo mode skips blockchain)
+      const deployRes = await fetch('/api/agents/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-wallet-address': address,
+          'x-wallet-signature': signature,
+          'x-wallet-message': message,
+        },
+        body: JSON.stringify({ agentId: agent.id }),
+      });
+
+      if (!deployRes.ok) {
+        const err = await deployRes.json();
+        throw new Error(err.error?.message ?? 'Deployment failed');
+      }
+
+      setDeployedAgentId(agent.id);
+      setDemoStatus('confirmed');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Deployment failed';
+      setDemoError(msg);
+      setDemoStatus('failed');
+    }
+  };
+
+  const handleOnChainDeploy = async () => {
     await deploy({
       name: config.persona.name,
       metadataUri: `ipfs://placeholder/${config.persona.name}`,
     });
   };
 
+  const handleDeploy = DEMO_MODE ? handleDemoDeploy : handleOnChainDeploy;
+
   const isDeploying = status !== 'idle' && status !== 'failed';
+  const isConfirmed = status === ('confirmed' as DeployStatus);
 
   return (
     <div className="space-y-8">
+      {/* Demo mode indicator */}
+      {DEMO_MODE && (
+        <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-4 py-3 text-sm text-yellow-400">
+          <strong>Demo Mode</strong> — Blockchain transactions are skipped. Agent will be deployed directly.
+        </div>
+      )}
+
       {/* Step indicator */}
       <div className="flex items-center justify-between">
         {STEPS.map((s, i) => (
@@ -103,12 +207,23 @@ export function DeployWizard() {
       ) : (
         <div className="space-y-6">
           <ConfirmationCard config={config} />
-          {(status !== 'idle') && (
+          {status !== 'idle' && (
             <TransactionStatus
               status={status}
-              txHash={txHash}
+              txHash={DEMO_MODE ? undefined : txHash}
               error={error}
             />
+          )}
+          {status === 'confirmed' && deployedAgentId && (
+            <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-4 text-center">
+              <p className="text-green-400 font-medium mb-2">Agent deployed successfully!</p>
+              <Button
+                variant="outline"
+                onClick={() => router.push(`/dashboard/agents/${deployedAgentId}`)}
+              >
+                View Agent Dashboard
+              </Button>
+            </div>
           )}
         </div>
       )}
@@ -119,7 +234,12 @@ export function DeployWizard() {
           variant="outline"
           onClick={() => {
             if (step === 3 && status === 'failed') {
-              reset();
+              if (DEMO_MODE) {
+                setDemoStatus('idle');
+                setDemoError(null);
+              } else {
+                reset();
+              }
             }
             setStep(Math.max(0, step - 1));
           }}
@@ -140,14 +260,18 @@ export function DeployWizard() {
         ) : (
           <Button
             onClick={handleDeploy}
-            disabled={isDeploying || (status as string) === 'confirmed'}
+            disabled={isDeploying || isConfirmed || !address}
             className="brand-gradient text-white hover:opacity-90"
           >
             <Rocket className="h-4 w-4 mr-2" />
-            {(status as string) === 'confirmed'
+            {status === 'confirmed'
               ? 'Deployed!'
               : isDeploying
               ? 'Deploying...'
+              : !address
+              ? 'Connect Wallet First'
+              : DEMO_MODE
+              ? 'Deploy Agent (Demo)'
               : 'Deploy Agent (0.005 ETH)'}
           </Button>
         )}

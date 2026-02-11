@@ -1,4 +1,4 @@
-import { ContentType } from '../core/content-pipeline.js';
+import { ContentType } from '../core/types.js';
 
 interface ContentWeight {
   type: ContentType;
@@ -13,34 +13,34 @@ export interface ContentStrategy {
 
 export const BALANCED_STRATEGY: ContentStrategy = {
   name: 'Balanced',
-  description: 'Mix of original content, threads, engagement, and media posts',
+  description: 'Media-forward mix with visual elements in most posts',
   weights: [
-    { type: ContentType.ORIGINAL, weight: 0.35 },
-    { type: ContentType.THREAD, weight: 0.25 },
-    { type: ContentType.ENGAGEMENT, weight: 0.20 },
-    { type: ContentType.MEDIA, weight: 0.20 },
+    { type: ContentType.ORIGINAL, weight: 0.15 },
+    { type: ContentType.THREAD, weight: 0.15 },
+    { type: ContentType.ENGAGEMENT, weight: 0.15 },
+    { type: ContentType.MEDIA, weight: 0.55 },
   ],
 };
 
 export const TEXT_HEAVY_STRATEGY: ContentStrategy = {
   name: 'TextHeavy',
-  description: 'Prioritizes text content and threads over media',
+  description: 'Text-focused but still includes regular media posts',
   weights: [
-    { type: ContentType.ORIGINAL, weight: 0.40 },
-    { type: ContentType.THREAD, weight: 0.35 },
+    { type: ContentType.ORIGINAL, weight: 0.25 },
+    { type: ContentType.THREAD, weight: 0.25 },
     { type: ContentType.ENGAGEMENT, weight: 0.15 },
-    { type: ContentType.MEDIA, weight: 0.10 },
+    { type: ContentType.MEDIA, weight: 0.35 },
   ],
 };
 
 export const MEDIA_HEAVY_STRATEGY: ContentStrategy = {
   name: 'MediaHeavy',
-  description: 'Prioritizes media-rich content with visual elements',
+  description: 'Heavily prioritizes media-rich content with visual elements',
   weights: [
-    { type: ContentType.ORIGINAL, weight: 0.15 },
-    { type: ContentType.THREAD, weight: 0.15 },
-    { type: ContentType.ENGAGEMENT, weight: 0.20 },
-    { type: ContentType.MEDIA, weight: 0.50 },
+    { type: ContentType.ORIGINAL, weight: 0.05 },
+    { type: ContentType.THREAD, weight: 0.10 },
+    { type: ContentType.ENGAGEMENT, weight: 0.10 },
+    { type: ContentType.MEDIA, weight: 0.75 },
   ],
 };
 

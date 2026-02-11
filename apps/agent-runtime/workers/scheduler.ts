@@ -1,6 +1,7 @@
-import { Worker, Queue, type Job } from 'bullmq';
+import { Worker, Queue, QueueEvents, type Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import pino from 'pino';
+import { PrismaClient } from '@prisma/client';
 import { logger as rootLogger } from '../src/config.js';
 
 interface SchedulerJobData {
@@ -11,8 +12,8 @@ interface SchedulerJobData {
 
 interface SchedulerJobResult {
   agentId: string;
-  contentJobId: string;
-  dispatchedAt: string;
+  castHashes: string[];
+  publishedAt: string;
 }
 
 interface HealthStatus {
@@ -29,7 +30,8 @@ interface HealthStatus {
 
 const SCHEDULER_QUEUE_NAME = 'scheduled-posting';
 const CONTENT_QUEUE_NAME = 'content-generation';
-const HEALTH_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const POSTING_QUEUE_NAME = 'farcaster-posting';
+const HEALTH_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 export function createSchedulerWorker(
   connection: Redis,
@@ -39,6 +41,7 @@ export function createSchedulerWorker(
   shutdown: () => Promise<void>;
 } {
   const logger: pino.Logger = rootLogger.child({ module: 'SchedulerWorker' });
+  const prisma = new PrismaClient();
 
   const contentQueue = new Queue(CONTENT_QUEUE_NAME, {
     connection: connection.duplicate(),
@@ -50,7 +53,21 @@ export function createSchedulerWorker(
     },
   });
 
+  const postingQueue = new Queue(POSTING_QUEUE_NAME, {
+    connection: connection.duplicate(),
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5000 },
+      removeOnComplete: { count: 200 },
+      removeOnFail: { count: 100 },
+    },
+  });
+
   const schedulerQueue = new Queue(SCHEDULER_QUEUE_NAME, {
+    connection: connection.duplicate(),
+  });
+
+  const contentEvents = new QueueEvents(CONTENT_QUEUE_NAME, {
     connection: connection.duplicate(),
   });
 
@@ -69,54 +86,131 @@ export function createSchedulerWorker(
 
       logger.info(
         { jobId: job.id, agentId, strategy },
-        'Scheduler dispatching content generation',
+        'Scheduler dispatching autonomous cycle',
       );
 
-      // Create content generation job
+      // Step 1: Load real agent data from database
+      const agent = await prisma.agent.findUnique({
+        where: { id: agentId },
+      });
+
+      if (!agent) {
+        throw new Error(`Agent ${agentId} not found in database`);
+      }
+
+      if (agent.status !== 'ACTIVE') {
+        logger.warn({ agentId, status: agent.status }, 'Agent not active, skipping cycle');
+        return { agentId, castHashes: [], publishedAt: new Date().toISOString() };
+      }
+
+      if (!agent.signerUuid || agent.signerUuid.startsWith('demo-signer-')) {
+        logger.warn({ agentId }, 'Agent has no valid signer, skipping posting');
+        return { agentId, castHashes: [], publishedAt: new Date().toISOString() };
+      }
+
+      const persona = typeof agent.persona === 'string'
+        ? agent.persona
+        : (agent.persona as Record<string, unknown>)?.description as string ?? '';
+
+      // Step 2: Generate content
+      logger.info({ agentId }, 'Dispatching content generation');
       const contentJob = await contentQueue.add(
         'generate-content',
         {
           agentId,
-          agentName: `Agent-${agentId}`, // Placeholder — real data from DB
-          agentPersona: '', // Placeholder — loaded from agent config
+          agentName: agent.name,
+          agentPersona: persona,
           contentType: 'auto',
           strategy,
         },
+        { priority: 1 },
+      );
+
+      // Step 3: Wait for content generation to complete
+      const contentResult = await contentJob.waitUntilFinished(contentEvents, 120_000) as {
+        agentId: string;
+        text: string;
+        mediaUrl?: string;
+        contentType: string;
+        parts?: string[];
+      };
+
+      logger.info(
+        { agentId, contentType: contentResult.contentType, hasMedia: !!contentResult.mediaUrl },
+        'Content generated, dispatching to Farcaster',
+      );
+
+      // Step 4: Queue posting job with real data
+      const postingJob = await postingQueue.add(
+        'publish-to-farcaster',
         {
-          priority: 1,
-          delay: calculateJitter(),
+          agentId,
+          signerUuid: agent.signerUuid,
+          text: contentResult.text,
+          mediaUrl: contentResult.mediaUrl,
+          contentType: contentResult.contentType,
+          parts: contentResult.parts,
         },
       );
 
-      const contentJobId = contentJob.id ?? 'unknown';
+      // Step 5: Wait for posting to complete
+      const postingEvents = new QueueEvents(POSTING_QUEUE_NAME, {
+        connection: connection.duplicate(),
+      });
 
-      logger.info(
-        { jobId: job.id, agentId, contentJobId },
-        'Content generation job dispatched',
-      );
+      try {
+        const postingResult = await postingJob.waitUntilFinished(postingEvents, 60_000) as {
+          agentId: string;
+          casts: Array<{ hash: string; text: string }>;
+          publishedAt: string;
+        };
 
-      return {
-        agentId,
-        contentJobId,
-        dispatchedAt: new Date().toISOString(),
-      };
+        const castHashes = postingResult.casts?.map((c) => c.hash) ?? [];
+
+        // Step 6: Store casts in database
+        for (const cast of postingResult.casts ?? []) {
+          await prisma.cast.create({
+            data: {
+              agentId,
+              content: cast.text,
+              hash: cast.hash,
+              type: contentResult.contentType === 'thread' ? 'THREAD' : contentResult.contentType === 'media' ? 'MEDIA' : 'ORIGINAL',
+              publishedAt: new Date(),
+              mediaUrl: contentResult.mediaUrl,
+            },
+          });
+        }
+
+        logger.info(
+          { agentId, castCount: castHashes.length, hashes: castHashes },
+          'Autonomous cycle complete — posted to Farcaster',
+        );
+
+        return {
+          agentId,
+          castHashes,
+          publishedAt: postingResult.publishedAt,
+        };
+      } finally {
+        await postingEvents.close();
+      }
     },
     {
       connection: connection.duplicate(),
-      concurrency: 10,
+      concurrency: 5,
       removeOnComplete: { count: 500 },
       removeOnFail: { count: 200 },
     },
   );
 
   worker.on('completed', (job) => {
-    logger.debug({ jobId: job.id, agentId: job.data.agentId }, 'Scheduler job completed');
+    logger.info({ jobId: job.id, agentId: job.data.agentId }, 'Autonomous cycle completed');
   });
 
   worker.on('failed', (job, error) => {
     logger.error(
       { jobId: job?.id, agentId: job?.data.agentId, error: error.message },
-      'Scheduler job failed',
+      'Autonomous cycle failed',
     );
   });
 
@@ -124,7 +218,7 @@ export function createSchedulerWorker(
     logger.error({ error: error.message }, 'Scheduler worker error');
   });
 
-  // Start health monitoring
+  // Health monitoring
   healthCheckTimer = setInterval(() => {
     void performHealthCheck();
   }, HEALTH_CHECK_INTERVAL_MS);
@@ -141,7 +235,7 @@ export function createSchedulerWorker(
       const repeatableJobs = await schedulerQueue.getRepeatableJobs();
 
       lastHealthStatus = {
-        isHealthy: failed < 100, // Unhealthy if too many failures
+        isHealthy: failed < 100,
         activeAgents: repeatableJobs.length,
         queueStats: { waiting, active, completed, failed },
         lastCheckAt: new Date().toISOString(),
@@ -182,22 +276,24 @@ export function createSchedulerWorker(
     await Promise.allSettled([
       worker.close(),
       contentQueue.close(),
+      postingQueue.close(),
       schedulerQueue.close(),
+      contentEvents.close(),
+      prisma.$disconnect(),
     ]);
 
     logger.info('Scheduler worker shutdown complete');
   }
 
   logger.info(
-    { schedulerQueue: SCHEDULER_QUEUE_NAME, contentQueue: CONTENT_QUEUE_NAME },
-    'Scheduler worker initialized',
+    { schedulerQueue: SCHEDULER_QUEUE_NAME, contentQueue: CONTENT_QUEUE_NAME, postingQueue: POSTING_QUEUE_NAME },
+    'Scheduler worker initialized — full autonomous pipeline',
   );
 
   return { worker, getHealth, shutdown };
 }
 
 function calculateJitter(): number {
-  // 0-60 seconds random delay
   return Math.floor(Math.random() * 60_000);
 }
 

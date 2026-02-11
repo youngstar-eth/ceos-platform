@@ -4,7 +4,8 @@
   "globalEnv": [
     "NODE_ENV",
     "DATABASE_URL",
-    "REDIS_URL"
+    "REDIS_URL",
+    "NEXT_PUBLIC_DEMO_MODE"
   ],
   "tasks": {
     "build": {

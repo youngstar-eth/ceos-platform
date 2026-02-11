@@ -1,7 +1,7 @@
 import pino from 'pino';
 import { logger as rootLogger } from '../config.js';
 import { OpenRouterClient } from '../integrations/openrouter.js';
-import type { ContentType } from '../core/content-pipeline.js';
+import type { ContentType } from '../core/types.js';
 
 interface Trend {
   id: string;

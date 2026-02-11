@@ -11,23 +11,44 @@ interface AgentCardProps {
   agent: Agent;
 }
 
-const statusColors: Record<Agent['status'], string> = {
+const statusColors: Record<string, string> = {
   active: 'bg-green-500/10 text-green-500 border-green-500/20',
+  ACTIVE: 'bg-green-500/10 text-green-500 border-green-500/20',
   paused: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
+  PAUSED: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
   terminated: 'bg-red-500/10 text-red-500 border-red-500/20',
+  TERMINATED: 'bg-red-500/10 text-red-500 border-red-500/20',
   deploying: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+  DEPLOYING: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+  PENDING: 'bg-gray-500/10 text-gray-500 border-gray-500/20',
+  FAILED: 'bg-red-500/10 text-red-500 border-red-500/20',
 };
 
 export function AgentCard({ agent }: AgentCardProps) {
+  const metrics = agent.metrics ?? {
+    totalCasts: 0,
+    totalLikes: 0,
+    totalRecasts: 0,
+    totalFollowers: 0,
+  };
+
   return (
     <Link href={`/dashboard/agents/${agent.id}`}>
       <Card className="hover:border-primary/50 transition-all hover:shadow-lg hover:shadow-primary/5 cursor-pointer group">
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                <Bot className="h-5 w-5 text-primary" />
-              </div>
+              {agent.pfpUrl ? (
+                <img
+                  src={agent.pfpUrl}
+                  alt={`${agent.name} avatar`}
+                  className="h-10 w-10 rounded-lg object-cover"
+                />
+              ) : (
+                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                  <Bot className="h-5 w-5 text-primary" />
+                </div>
+              )}
               <div>
                 <h3 className="font-semibold text-sm">{agent.name}</h3>
                 {agent.farcasterUsername && (
@@ -39,36 +60,36 @@ export function AgentCard({ agent }: AgentCardProps) {
             </div>
             <Badge
               variant="outline"
-              className={cn('text-[10px] capitalize', statusColors[agent.status])}
+              className={cn('text-[10px] capitalize', statusColors[agent.status] ?? '')}
             >
-              {agent.status}
+              {agent.status.toLowerCase()}
             </Badge>
           </div>
         </CardHeader>
         <CardContent>
           <p className="text-xs text-muted-foreground mb-4 line-clamp-2">
-            {agent.description}
+            {agent.description ?? 'No description'}
           </p>
 
           <div className="grid grid-cols-4 gap-2">
             <MetricItem
               icon={MessageSquare}
-              value={agent.metrics.totalCasts}
+              value={metrics.totalCasts}
               label="Casts"
             />
             <MetricItem
               icon={Heart}
-              value={agent.metrics.totalLikes}
+              value={metrics.totalLikes}
               label="Likes"
             />
             <MetricItem
               icon={Repeat2}
-              value={agent.metrics.totalRecasts}
+              value={metrics.totalRecasts}
               label="Recasts"
             />
             <MetricItem
               icon={Users}
-              value={agent.metrics.totalFollowers}
+              value={metrics.totalFollowers}
               label="Followers"
             />
           </div>

@@ -27,7 +27,7 @@ interface CastResult {
   index: number;
 }
 
-const QUEUE_NAME = 'scheduled-posting';
+const QUEUE_NAME = 'farcaster-posting';
 const CONCURRENCY = 3;
 
 // Rate limit: max 10 posts per hour per agent

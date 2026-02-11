@@ -3,13 +3,9 @@ import { logger as rootLogger } from '../config.js';
 import { OpenRouterClient } from '../integrations/openrouter.js';
 import { FalAiClient } from '../integrations/fal-ai.js';
 import { selectContentType, buildPrompt, type ContentStrategy } from '../strategies/posting.js';
+import { ContentType } from './types.js';
 
-export enum ContentType {
-  ORIGINAL = 'original',
-  THREAD = 'thread',
-  ENGAGEMENT = 'engagement',
-  MEDIA = 'media',
-}
+export { ContentType };
 
 interface GeneratedContent {
   text: string;
@@ -80,8 +76,12 @@ export class ContentPipeline {
 
     const text = this.validateAndTrimText(result.text);
 
+    // 50% chance to attach a complementary image
+    const mediaUrl = await this.maybeGenerateImage(agentPersona, 0.5);
+
     return {
       text,
+      mediaUrl,
       type: ContentType.ORIGINAL,
       model: result.model,
       tokensUsed: result.tokensUsed,
@@ -104,8 +104,12 @@ export class ContentPipeline {
     const parts = this.splitThread(result.text);
     const text = parts[0] ?? result.text;
 
+    // 40% chance to attach a cover image to the thread
+    const mediaUrl = await this.maybeGenerateImage(agentPersona, 0.4);
+
     return {
       text,
+      mediaUrl,
       type: ContentType.THREAD,
       parts,
       model: result.model,
@@ -166,8 +170,12 @@ export class ContentPipeline {
 
     const text = this.validateAndTrimText(result.text);
 
+    // 40% chance to attach a complementary image
+    const mediaUrl = await this.maybeGenerateImage(agentPersona, 0.4);
+
     return {
       text,
+      mediaUrl,
       type: ContentType.ENGAGEMENT,
       model: result.model,
       tokensUsed: result.tokensUsed,
@@ -227,6 +235,38 @@ export class ContentPipeline {
     }
 
     return parts;
+  }
+
+  /**
+   * Optionally generate a complementary image based on probability.
+   * Returns the image URL or undefined if skipped/failed.
+   */
+  private async maybeGenerateImage(
+    agentPersona: AgentPersona,
+    probability: number,
+  ): Promise<string | undefined> {
+    if (Math.random() > probability) {
+      return undefined;
+    }
+
+    this.logger.info({ agentId: agentPersona.agentId, probability }, 'Generating complementary image');
+
+    try {
+      const descriptionResult = await this.openrouter.generateText(
+        `Based on this persona: "${agentPersona.persona}", generate a concise image description (one sentence, max 50 words) for an engaging social media image. The image should be visually striking, modern, and related to the persona's expertise. Output ONLY the image description, nothing else.`,
+        { maxTokens: 80, temperature: 0.9 },
+      );
+
+      const imageResult = await this.falAi.generateImage(descriptionResult.text.trim());
+      this.logger.info({ agentId: agentPersona.agentId, mediaUrl: imageResult.url }, 'Complementary image generated');
+      return imageResult.url;
+    } catch (error) {
+      this.logger.warn(
+        { agentId: agentPersona.agentId, error: error instanceof Error ? error.message : String(error) },
+        'Complementary image generation failed, continuing without image',
+      );
+      return undefined;
+    }
   }
 
   private validateAndTrimText(text: string): string {

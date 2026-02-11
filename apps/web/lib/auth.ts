@@ -2,6 +2,8 @@ import { verifyMessage } from "viem";
 import { Errors } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+
 /**
  * Extracts and verifies a wallet signature from the request headers.
  *
@@ -11,13 +13,24 @@ import { logger } from "@/lib/logger";
  *   x-wallet-message: <the original signed message>
  *
  * Returns the verified wallet address (checksummed) or throws.
+ * In demo mode, skips cryptographic verification and trusts the address header.
  */
 export async function verifyWalletSignature(request: Request): Promise<string> {
   const address = request.headers.get("x-wallet-address");
   const signature = request.headers.get("x-wallet-signature");
   const message = request.headers.get("x-wallet-message");
 
-  if (!address || !signature || !message) {
+  if (!address) {
+    throw Errors.unauthorized("Missing wallet address header");
+  }
+
+  // In demo mode, skip signature verification — trust the address header
+  if (DEMO_MODE) {
+    logger.info({ address }, "Demo mode: wallet address accepted without signature verification");
+    return address;
+  }
+
+  if (!signature || !message) {
     throw Errors.unauthorized("Missing wallet authentication headers");
   }
 
