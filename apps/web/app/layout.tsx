@@ -1,11 +1,29 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter, Orbitron, Press_Start_2P, Rajdhani } from 'next/font/google';
 import { Providers } from './providers';
 import './globals.css';
 
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
+});
+
+const orbitron = Orbitron({
+  subsets: ['latin'],
+  variable: '--font-orbitron',
+  weight: ['400', '500', '600', '700', '900'],
+});
+
+const pressStart = Press_Start_2P({
+  subsets: ['latin'],
+  variable: '--font-pixel',
+  weight: '400',
+});
+
+const rajdhani = Rajdhani({
+  subsets: ['latin'],
+  variable: '--font-rajdhani',
+  weight: ['300', '400', '500', '600', '700'],
 });
 
 export const metadata: Metadata = {
@@ -42,7 +60,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body
-        className={`${inter.variable} font-sans antialiased min-h-screen bg-background text-foreground`}
+        className={`${inter.variable} ${orbitron.variable} ${pressStart.variable} ${rajdhani.variable} font-sans antialiased min-h-screen bg-background text-foreground`}
       >
         <Providers>{children}</Providers>
       </body>

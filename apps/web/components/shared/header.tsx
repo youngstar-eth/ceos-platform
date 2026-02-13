@@ -18,14 +18,14 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-50 w-full neon-border-bottom bg-void/90 backdrop-blur-xl supports-[backdrop-filter]:bg-void/70">
       <div className="container flex h-16 items-center justify-between">
         <div className="flex items-center gap-6">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg brand-gradient flex items-center justify-center">
-              <span className="text-white font-bold text-sm">OC</span>
+          <Link href="/" className="flex items-center gap-2 group">
+            <div className="relative h-8 w-8 rounded-lg bg-neon-pink/20 border border-neon-pink/40 flex items-center justify-center transition-all group-hover:neon-box-pink group-hover:bg-neon-pink/30">
+              <span className="text-neon-pink font-bold text-sm font-orbitron">OC</span>
             </div>
-            <span className="text-xl font-bold brand-gradient-text">
+            <span className="text-lg font-bold font-orbitron text-neon-cyan tracking-wider">
               OpenClaw
             </span>
           </Link>
@@ -35,9 +35,10 @@ export function Header() {
               <Link
                 key={link.href}
                 href={link.href}
-                className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-accent"
+                className="relative px-3 py-2 text-sm font-medium text-muted-foreground hover:text-neon-cyan transition-colors rounded-md hover:bg-neon-cyan/5 group"
               >
                 {link.label}
+                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-0 h-[1px] bg-neon-cyan group-hover:w-3/4 transition-all duration-300" />
               </Link>
             ))}
           </nav>
@@ -48,7 +49,7 @@ export function Header() {
           <Button
             variant="ghost"
             size="icon"
-            className="md:hidden"
+            className="md:hidden text-neon-cyan hover:bg-neon-cyan/10"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >
             <Menu className="h-5 w-5" />
@@ -59,7 +60,7 @@ export function Header() {
       {/* Mobile menu */}
       <div
         className={cn(
-          'md:hidden border-t border-border overflow-hidden transition-all',
+          'md:hidden border-t border-neon-cyan/10 overflow-hidden transition-all bg-void/95',
           mobileMenuOpen ? 'max-h-64' : 'max-h-0'
         )}
       >
@@ -68,7 +69,7 @@ export function Header() {
             <Link
               key={link.href}
               href={link.href}
-              className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-accent"
+              className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-neon-cyan transition-colors rounded-md hover:bg-neon-cyan/5"
               onClick={() => setMobileMenuOpen(false)}
             >
               {link.label}

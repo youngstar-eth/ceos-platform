@@ -17,6 +17,12 @@ const config: Config = {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
+        orbitron: ['var(--font-orbitron)', 'monospace'],
+        pixel: ['var(--font-pixel)', 'monospace'],
+        rajdhani: ['var(--font-rajdhani)', 'sans-serif'],
+      },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
@@ -51,6 +57,28 @@ const config: Config = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        /* Synthwave / Vaporwave palette */
+        neon: {
+          pink: '#ff2a6d',
+          cyan: '#05d9e8',
+          purple: '#d300c5',
+          blue: '#7700ff',
+          yellow: '#ffd319',
+        },
+        sunset: {
+          orange: '#ff6b35',
+          pink: '#ff0099',
+          purple: '#7b2cbf',
+          deep: '#240046',
+        },
+        void: '#0d0221',
+        'grid-dark': '#120458',
+        chrome: {
+          light: '#e8e8e8',
+          mid: '#a0a0a0',
+          dark: '#4a4a4a',
+        },
+        /* Legacy brand colors (kept for backward compat) */
         brand: {
           purple: '#7c3aed',
           blue: '#3b82f6',
@@ -109,6 +137,53 @@ const config: Config = {
           '0%': { transform: 'rotate(0deg)' },
           '100%': { transform: 'rotate(360deg)' },
         },
+        /* Synthwave keyframes */
+        'neon-pulse': {
+          '0%, 100%': { opacity: '1', filter: 'brightness(1)' },
+          '50%': { opacity: '0.8', filter: 'brightness(1.3)' },
+        },
+        'glitch-1': {
+          '0%': { clipPath: 'inset(40% 0 61% 0)' },
+          '10%': { clipPath: 'inset(92% 0 1% 0)' },
+          '20%': { clipPath: 'inset(43% 0 1% 0)' },
+          '30%': { clipPath: 'inset(25% 0 58% 0)' },
+          '40%': { clipPath: 'inset(54% 0 7% 0)' },
+          '50%': { clipPath: 'inset(58% 0 43% 0)' },
+          '60%': { clipPath: 'inset(70% 0 7% 0)' },
+          '70%': { clipPath: 'inset(31% 0 61% 0)' },
+          '80%': { clipPath: 'inset(46% 0 35% 0)' },
+          '90%': { clipPath: 'inset(80% 0 2% 0)' },
+          '100%': { clipPath: 'inset(40% 0 61% 0)' },
+        },
+        'glitch-2': {
+          '0%': { clipPath: 'inset(25% 0 58% 0)' },
+          '10%': { clipPath: 'inset(54% 0 7% 0)' },
+          '20%': { clipPath: 'inset(58% 0 43% 0)' },
+          '30%': { clipPath: 'inset(40% 0 61% 0)' },
+          '40%': { clipPath: 'inset(92% 0 1% 0)' },
+          '50%': { clipPath: 'inset(70% 0 7% 0)' },
+          '60%': { clipPath: 'inset(31% 0 61% 0)' },
+          '70%': { clipPath: 'inset(46% 0 35% 0)' },
+          '80%': { clipPath: 'inset(80% 0 2% 0)' },
+          '90%': { clipPath: 'inset(43% 0 1% 0)' },
+          '100%': { clipPath: 'inset(25% 0 58% 0)' },
+        },
+        'grid-scroll': {
+          '0%': { transform: 'perspective(500px) rotateX(60deg) translateY(0)' },
+          '100%': { transform: 'perspective(500px) rotateX(60deg) translateY(60px)' },
+        },
+        'chrome-shine': {
+          '0%': { backgroundPosition: '-200% center' },
+          '100%': { backgroundPosition: '200% center' },
+        },
+        flicker: {
+          '0%, 19%, 21%, 23%, 25%, 54%, 56%, 100%': { opacity: '1' },
+          '20%, 24%, 55%': { opacity: '0.4' },
+        },
+        scanline: {
+          '0%': { transform: 'translateY(-100%)' },
+          '100%': { transform: 'translateY(100%)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -122,10 +197,21 @@ const config: Config = {
         'slide-in-right': 'slide-in-right 0.6s ease-out forwards',
         float: 'float 3s ease-in-out infinite',
         'spin-slow': 'spin-slow 20s linear infinite',
+        'neon-pulse': 'neon-pulse 2s ease-in-out infinite',
+        'glitch-1': 'glitch-1 2s infinite linear',
+        'glitch-2': 'glitch-2 2s infinite linear reverse',
+        'grid-scroll': 'grid-scroll 2s linear infinite',
+        'chrome-shine': 'chrome-shine 4s linear infinite',
+        flicker: 'flicker 3s linear infinite',
+        scanline: 'scanline 8s linear infinite',
       },
       backgroundImage: {
-        'brand-gradient': 'linear-gradient(135deg, #7c3aed 0%, #3b82f6 50%, #14b8a6 100%)',
-        'brand-gradient-subtle': 'linear-gradient(135deg, rgba(124,58,237,0.1) 0%, rgba(59,130,246,0.1) 50%, rgba(20,184,166,0.1) 100%)',
+        'sunset-gradient': 'linear-gradient(180deg, #ffd319 0%, #ff6b35 15%, #ff0099 35%, #7b2cbf 55%, #240046 75%, #0d0221 100%)',
+        'neon-gradient': 'linear-gradient(135deg, #ff2a6d 0%, #d300c5 50%, #05d9e8 100%)',
+        'neon-gradient-subtle': 'linear-gradient(135deg, rgba(255,42,109,0.1) 0%, rgba(211,0,197,0.1) 50%, rgba(5,217,232,0.1) 100%)',
+        /* Legacy */
+        'brand-gradient': 'linear-gradient(135deg, #ff2a6d 0%, #d300c5 50%, #05d9e8 100%)',
+        'brand-gradient-subtle': 'linear-gradient(135deg, rgba(255,42,109,0.1) 0%, rgba(211,0,197,0.1) 50%, rgba(5,217,232,0.1) 100%)',
       },
     },
   },
