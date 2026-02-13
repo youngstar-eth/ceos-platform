@@ -68,18 +68,28 @@ const activityIcons: Record<string, React.ComponentType<{ className?: string }>>
   deploy: Rocket,
 };
 
+const activityColors: Record<string, string> = {
+  cast: 'bg-neon-cyan/10 text-neon-cyan',
+  engagement: 'bg-neon-pink/10 text-neon-pink',
+  revenue: 'bg-neon-mint/10 text-neon-mint',
+  deploy: 'bg-neon-purple/10 text-neon-purple',
+};
+
 export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold font-orbitron vaporwave-gradient-text">Dashboard</h1>
+            <span className="text-[8px] text-vapor-lavender/25 font-pixel mt-2">ダッシュボード</span>
+          </div>
           <p className="text-muted-foreground mt-1">
             Overview of your agents and revenue
           </p>
         </div>
         <Link href="/dashboard/deploy">
-          <Button className="brand-gradient text-white hover:opacity-90">
+          <Button className="brand-gradient text-white hover:opacity-90 shadow-lg shadow-neon-purple/15">
             <Rocket className="h-4 w-4 mr-2" />
             Deploy Agent
           </Button>
@@ -119,10 +129,10 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Activity */}
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2 glass-card">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-lg">Recent Activity</CardTitle>
-            <Badge variant="outline" className="text-xs">
+            <CardTitle className="text-lg font-rajdhani">Recent Activity</CardTitle>
+            <Badge variant="outline" className="text-xs border-neon-mint/30 text-neon-mint bg-neon-mint/5">
               <Clock className="h-3 w-3 mr-1" />
               Live
             </Badge>
@@ -131,17 +141,18 @@ export default function DashboardPage() {
             <div className="space-y-4">
               {RECENT_ACTIVITY.map((activity) => {
                 const Icon = activityIcons[activity.type] ?? Activity;
+                const colorClass = activityColors[activity.type] ?? 'bg-muted text-muted-foreground';
                 return (
                   <div
                     key={activity.id}
-                    className="flex items-start gap-3 pb-4 border-b border-border last:border-0 last:pb-0"
+                    className="flex items-start gap-3 pb-4 border-b border-neon-purple/10 last:border-0 last:pb-0 group"
                   >
-                    <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center shrink-0 mt-0.5">
-                      <Icon className="h-4 w-4 text-muted-foreground" />
+                    <div className={`h-8 w-8 rounded-lg ${colorClass} flex items-center justify-center shrink-0 mt-0.5 transition-all group-hover:scale-105`}>
+                      <Icon className="h-4 w-4" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm">
-                        <span className="font-medium">{activity.agent}</span>
+                        <span className="font-medium text-neon-cyan">{activity.agent}</span>
                         {' '}
                         <span className="text-muted-foreground">
                           {activity.action}
@@ -159,15 +170,15 @@ export default function DashboardPage() {
         </Card>
 
         {/* Quick Actions */}
-        <Card>
+        <Card className="glass-card">
           <CardHeader>
-            <CardTitle className="text-lg">Quick Actions</CardTitle>
+            <CardTitle className="text-lg font-rajdhani">Quick Actions</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <Link href="/dashboard/deploy" className="block">
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/30 hover:bg-accent transition-all cursor-pointer">
-                <div className="h-10 w-10 rounded-lg bg-brand-purple/10 flex items-center justify-center">
-                  <Rocket className="h-5 w-5 text-brand-purple" />
+              <div className="flex items-center gap-3 p-3 rounded-xl border border-neon-purple/15 hover:border-neon-pink/30 hover:bg-neon-pink/5 transition-all cursor-pointer group">
+                <div className="h-10 w-10 rounded-lg bg-neon-purple/10 border border-neon-purple/20 flex items-center justify-center group-hover:neon-box-purple transition-all">
+                  <Rocket className="h-5 w-5 text-neon-purple group-hover:text-neon-pink transition-colors" />
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium">Deploy New Agent</p>
@@ -175,13 +186,13 @@ export default function DashboardPage() {
                     0.005 ETH on Base
                   </p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-neon-pink group-hover:translate-x-0.5 transition-all" />
               </div>
             </Link>
             <Link href="/dashboard/revenue" className="block">
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/30 hover:bg-accent transition-all cursor-pointer">
-                <div className="h-10 w-10 rounded-lg bg-brand-teal/10 flex items-center justify-center">
-                  <DollarSign className="h-5 w-5 text-brand-teal" />
+              <div className="flex items-center gap-3 p-3 rounded-xl border border-neon-purple/15 hover:border-neon-mint/30 hover:bg-neon-mint/5 transition-all cursor-pointer group">
+                <div className="h-10 w-10 rounded-lg bg-neon-mint/10 border border-neon-mint/20 flex items-center justify-center group-hover:neon-box-cyan transition-all">
+                  <DollarSign className="h-5 w-5 text-neon-mint" />
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium">Claim Revenue</p>
@@ -189,13 +200,13 @@ export default function DashboardPage() {
                     Check your earnings
                   </p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-neon-mint group-hover:translate-x-0.5 transition-all" />
               </div>
             </Link>
             <Link href="/dashboard/agents" className="block">
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/30 hover:bg-accent transition-all cursor-pointer">
-                <div className="h-10 w-10 rounded-lg bg-brand-blue/10 flex items-center justify-center">
-                  <Bot className="h-5 w-5 text-brand-blue" />
+              <div className="flex items-center gap-3 p-3 rounded-xl border border-neon-purple/15 hover:border-neon-cyan/30 hover:bg-neon-cyan/5 transition-all cursor-pointer group">
+                <div className="h-10 w-10 rounded-lg bg-neon-cyan/10 border border-neon-cyan/20 flex items-center justify-center group-hover:neon-box-cyan transition-all">
+                  <Bot className="h-5 w-5 text-neon-cyan" />
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium">Manage Agents</p>
@@ -203,13 +214,13 @@ export default function DashboardPage() {
                     View all your agents
                   </p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-neon-cyan group-hover:translate-x-0.5 transition-all" />
               </div>
             </Link>
             <Link href="/dashboard/skills" className="block">
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/30 hover:bg-accent transition-all cursor-pointer">
-                <div className="h-10 w-10 rounded-lg bg-yellow-500/10 flex items-center justify-center">
-                  <TrendingUp className="h-5 w-5 text-yellow-500" />
+              <div className="flex items-center gap-3 p-3 rounded-xl border border-neon-purple/15 hover:border-neon-yellow/30 hover:bg-neon-yellow/5 transition-all cursor-pointer group">
+                <div className="h-10 w-10 rounded-lg bg-neon-yellow/10 border border-neon-yellow/20 flex items-center justify-center">
+                  <TrendingUp className="h-5 w-5 text-neon-yellow" />
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium">Browse Skills</p>
@@ -217,7 +228,7 @@ export default function DashboardPage() {
                     Free & premium skills
                   </p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-neon-yellow group-hover:translate-x-0.5 transition-all" />
               </div>
             </Link>
           </CardContent>

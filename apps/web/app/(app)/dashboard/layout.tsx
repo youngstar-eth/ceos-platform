@@ -11,11 +11,17 @@ export default function DashboardLayout({
 }) {
   return (
     <div className="flex min-h-screen flex-col relative">
-      {/* Subtle grid texture on entire dashboard */}
-      <div className="fixed inset-0 pointer-events-none z-0 opacity-[0.02] bg-[linear-gradient(to_right,rgba(5,217,232,0.4)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,42,109,0.3)_1px,transparent_1px)] bg-[length:40px_40px]" />
+      {/* Memphis grid texture on entire dashboard */}
+      <div className="fixed inset-0 pointer-events-none z-0 memphis-grid opacity-[0.04]" />
 
       {/* Very subtle CRT scanlines */}
       <div className="fixed inset-0 pointer-events-none z-[60] crt-scanlines-subtle" />
+
+      {/* Ambient background glow */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-neon-purple/[0.02] blur-[150px]" />
+        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-neon-pink/[0.02] blur-[120px]" />
+      </div>
 
       <Header />
       <div className="flex flex-1 relative z-10">

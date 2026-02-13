@@ -57,22 +57,32 @@ const config: Config = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
-        /* Synthwave / Vaporwave palette */
+        /* Vaporwave palette — primary tones */
         neon: {
-          pink: '#ff2a6d',
-          cyan: '#05d9e8',
-          purple: '#d300c5',
+          pink: '#ff71ce',
+          cyan: '#01cdfe',
+          purple: '#b967ff',
           blue: '#7700ff',
           yellow: '#ffd319',
+          mint: '#05ffa1',
+        },
+        /* Vaporwave pastels */
+        vapor: {
+          lavender: '#c774e8',
+          coral: '#ff6ad5',
+          sky: '#94d0ff',
+          lilac: '#ad8cff',
+          peach: '#ffb3ba',
+          seafoam: '#8affc1',
         },
         sunset: {
           orange: '#ff6b35',
           pink: '#ff0099',
           purple: '#7b2cbf',
-          deep: '#240046',
+          deep: '#2d1b69',
         },
-        void: '#0d0221',
-        'grid-dark': '#120458',
+        void: '#0a0118',
+        'grid-dark': '#1a0a2e',
         chrome: {
           light: '#e8e8e8',
           mid: '#a0a0a0',
@@ -80,12 +90,12 @@ const config: Config = {
         },
         /* Legacy brand colors (kept for backward compat) */
         brand: {
-          purple: '#7c3aed',
-          blue: '#3b82f6',
-          teal: '#14b8a6',
-          'purple-light': '#a78bfa',
-          'blue-light': '#60a5fa',
-          'teal-light': '#5eead4',
+          purple: '#b967ff',
+          blue: '#01cdfe',
+          teal: '#05ffa1',
+          'purple-light': '#c774e8',
+          'blue-light': '#94d0ff',
+          'teal-light': '#8affc1',
         },
       },
       borderRadius: {
@@ -137,7 +147,7 @@ const config: Config = {
           '0%': { transform: 'rotate(0deg)' },
           '100%': { transform: 'rotate(360deg)' },
         },
-        /* Synthwave keyframes */
+        /* Vaporwave keyframes */
         'neon-pulse': {
           '0%, 100%': { opacity: '1', filter: 'brightness(1)' },
           '50%': { opacity: '0.8', filter: 'brightness(1.3)' },
@@ -184,6 +194,14 @@ const config: Config = {
           '0%': { transform: 'translateY(-100%)' },
           '100%': { transform: 'translateY(100%)' },
         },
+        'vapor-breathe': {
+          '0%, 100%': { opacity: '0.4', transform: 'scale(1)' },
+          '50%': { opacity: '0.7', transform: 'scale(1.05)' },
+        },
+        'memphis-spin': {
+          '0%': { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -204,14 +222,19 @@ const config: Config = {
         'chrome-shine': 'chrome-shine 4s linear infinite',
         flicker: 'flicker 3s linear infinite',
         scanline: 'scanline 8s linear infinite',
+        'vapor-breathe': 'vapor-breathe 6s ease-in-out infinite',
+        'memphis-spin': 'memphis-spin 30s linear infinite',
       },
       backgroundImage: {
-        'sunset-gradient': 'linear-gradient(180deg, #ffd319 0%, #ff6b35 15%, #ff0099 35%, #7b2cbf 55%, #240046 75%, #0d0221 100%)',
-        'neon-gradient': 'linear-gradient(135deg, #ff2a6d 0%, #d300c5 50%, #05d9e8 100%)',
-        'neon-gradient-subtle': 'linear-gradient(135deg, rgba(255,42,109,0.1) 0%, rgba(211,0,197,0.1) 50%, rgba(5,217,232,0.1) 100%)',
+        'sunset-gradient': 'linear-gradient(180deg, #ffd319 0%, #ff6b35 15%, #ff71ce 35%, #b967ff 55%, #2d1b69 75%, #0a0118 100%)',
+        'neon-gradient': 'linear-gradient(135deg, #ff71ce 0%, #b967ff 50%, #01cdfe 100%)',
+        'neon-gradient-subtle': 'linear-gradient(135deg, rgba(255,113,206,0.1) 0%, rgba(185,103,255,0.1) 50%, rgba(1,205,254,0.1) 100%)',
+        'vapor-gradient': 'linear-gradient(135deg, #ff6ad5 0%, #c774e8 25%, #ad8cff 50%, #8795e8 75%, #94d0ff 100%)',
+        'vapor-gradient-soft': 'linear-gradient(135deg, rgba(255,106,213,0.08) 0%, rgba(199,116,232,0.06) 25%, rgba(173,140,255,0.08) 50%, rgba(135,149,232,0.06) 75%, rgba(148,208,255,0.08) 100%)',
+        'seapunk-gradient': 'linear-gradient(135deg, #01cdfe 0%, #05ffa1 50%, #01cdfe 100%)',
         /* Legacy */
-        'brand-gradient': 'linear-gradient(135deg, #ff2a6d 0%, #d300c5 50%, #05d9e8 100%)',
-        'brand-gradient-subtle': 'linear-gradient(135deg, rgba(255,42,109,0.1) 0%, rgba(211,0,197,0.1) 50%, rgba(5,217,232,0.1) 100%)',
+        'brand-gradient': 'linear-gradient(135deg, #ff71ce 0%, #b967ff 50%, #01cdfe 100%)',
+        'brand-gradient-subtle': 'linear-gradient(135deg, rgba(255,113,206,0.1) 0%, rgba(185,103,255,0.1) 50%, rgba(1,205,254,0.1) 100%)',
       },
     },
   },

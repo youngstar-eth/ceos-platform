@@ -22,10 +22,10 @@ export function Header() {
       <div className="container flex h-16 items-center justify-between">
         <div className="flex items-center gap-6">
           <Link href="/" className="flex items-center gap-2 group">
-            <div className="relative h-8 w-8 rounded-lg bg-neon-pink/20 border border-neon-pink/40 flex items-center justify-center transition-all group-hover:neon-box-pink group-hover:bg-neon-pink/30">
-              <span className="text-neon-pink font-bold text-sm font-orbitron">OC</span>
+            <div className="relative h-8 w-8 rounded-lg brand-gradient flex items-center justify-center transition-all group-hover:neon-box-pink">
+              <span className="text-void font-bold text-sm font-orbitron">OC</span>
             </div>
-            <span className="text-lg font-bold font-orbitron text-neon-cyan tracking-wider">
+            <span className="text-lg font-bold font-orbitron vaporwave-gradient-text tracking-wider">
               OpenClaw
             </span>
           </Link>
@@ -49,7 +49,7 @@ export function Header() {
           <Button
             variant="ghost"
             size="icon"
-            className="md:hidden text-neon-cyan hover:bg-neon-cyan/10"
+            className="md:hidden text-neon-purple hover:bg-neon-purple/10"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >
             <Menu className="h-5 w-5" />
@@ -60,7 +60,7 @@ export function Header() {
       {/* Mobile menu */}
       <div
         className={cn(
-          'md:hidden border-t border-neon-cyan/10 overflow-hidden transition-all bg-void/95',
+          'md:hidden border-t border-neon-purple/10 overflow-hidden transition-all bg-void/95',
           mobileMenuOpen ? 'max-h-64' : 'max-h-0'
         )}
       >
