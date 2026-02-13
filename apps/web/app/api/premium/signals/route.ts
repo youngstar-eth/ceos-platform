@@ -155,7 +155,7 @@ async function handler(_request: NextRequest): Promise<NextResponse<SignalsRespo
     return NextResponse.json(
       { success: false as const, error: { code: "INTERNAL_ERROR", message } },
       { status: 500 },
-    ) as NextResponse<SignalsResponse>;
+    ) as unknown as NextResponse<SignalsResponse>;
   }
 }
 

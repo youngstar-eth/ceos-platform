@@ -129,7 +129,7 @@ export function getTierColor(tier: CEOSTier): string {
     [CEOSTier.Platinum]: "text-neon-cyan",
     [CEOSTier.Diamond]: "text-neon-purple",
   };
-  return colors[tier];
+  return colors[tier] ?? "text-foreground";
 }
 
 /**
@@ -143,7 +143,7 @@ export function getTierBorderColor(tier: CEOSTier): string {
     [CEOSTier.Platinum]: "border-neon-cyan/30",
     [CEOSTier.Diamond]: "border-neon-purple/30",
   };
-  return colors[tier];
+  return colors[tier] ?? "border-border";
 }
 
 /**
@@ -157,7 +157,7 @@ export function getTierBgColor(tier: CEOSTier): string {
     [CEOSTier.Platinum]: "bg-neon-cyan/10",
     [CEOSTier.Diamond]: "bg-neon-purple/10",
   };
-  return colors[tier];
+  return colors[tier] ?? "bg-muted";
 }
 
 /**
@@ -171,5 +171,5 @@ export function getTierGlow(tier: CEOSTier): string {
     [CEOSTier.Platinum]: "0 0 10px rgba(1, 205, 254, 0.4)",
     [CEOSTier.Diamond]: "0 0 12px rgba(185, 103, 255, 0.5), 0 0 24px rgba(255, 113, 206, 0.2)",
   };
-  return glows[tier];
+  return glows[tier] ?? "none";
 }

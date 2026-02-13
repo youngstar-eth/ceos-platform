@@ -214,7 +214,7 @@ async function handler(request: NextRequest): Promise<NextResponse<AgentAnalytic
     return NextResponse.json(
       { success: false as const, error: { code: "INTERNAL_ERROR", message } },
       { status: 500 },
-    ) as NextResponse<AgentAnalyticsResponse>;
+    ) as unknown as NextResponse<AgentAnalyticsResponse>;
   }
 }
 

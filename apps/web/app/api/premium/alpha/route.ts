@@ -228,7 +228,7 @@ async function handler(_request: NextRequest): Promise<NextResponse<AlphaRespons
     return NextResponse.json(
       { success: false as const, error: { code: "INTERNAL_ERROR", message } },
       { status: 500 },
-    ) as NextResponse<AlphaResponse>;
+    ) as unknown as NextResponse<AlphaResponse>;
   }
 }
 

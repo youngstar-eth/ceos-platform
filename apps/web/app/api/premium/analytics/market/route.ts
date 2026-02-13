@@ -233,7 +233,7 @@ async function handler(_request: NextRequest): Promise<NextResponse<MarketOvervi
     return NextResponse.json(
       { success: false as const, error: { code: "INTERNAL_ERROR", message } },
       { status: 500 },
-    ) as NextResponse<MarketOverviewResponse>;
+    ) as unknown as NextResponse<MarketOverviewResponse>;
   }
 }
 
