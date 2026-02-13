@@ -6,24 +6,28 @@ import './globals.css';
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
+  display: 'swap',
 });
 
 const orbitron = Orbitron({
   subsets: ['latin'],
   variable: '--font-orbitron',
   weight: ['400', '500', '600', '700', '900'],
+  display: 'swap',
 });
 
 const pressStart = Press_Start_2P({
   subsets: ['latin'],
   variable: '--font-pixel',
   weight: '400',
+  display: 'swap',
 });
 
 const rajdhani = Rajdhani({
   subsets: ['latin'],
   variable: '--font-rajdhani',
   weight: ['300', '400', '500', '600', '700'],
+  display: 'swap',
 });
 
 export const metadata: Metadata = {
