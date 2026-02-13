@@ -9,6 +9,7 @@ import {
   ArrowRight,
   Activity,
   Clock,
+  Terminal,
 } from 'lucide-react';
 import { StatCard } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -68,18 +69,25 @@ const activityIcons: Record<string, React.ComponentType<{ className?: string }>>
   deploy: Rocket,
 };
 
+const activityColors: Record<string, string> = {
+  cast: 'text-neon-cyan bg-neon-cyan/10 border-neon-cyan/20',
+  engagement: 'text-neon-green bg-neon-green/10 border-neon-green/20',
+  revenue: 'text-neon-yellow bg-neon-yellow/10 border-neon-yellow/20',
+  deploy: 'text-neon-purple bg-neon-purple/10 border-neon-purple/20',
+};
+
 export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground mt-1">
-            Overview of your agents and revenue
+          <h1 className="text-3xl font-bold font-orbitron text-neon-green">Dashboard</h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            <span className="text-neon-green/30 font-pixel text-[10px]">{'>'}</span> Overview of your agents and revenue
           </p>
         </div>
         <Link href="/dashboard/deploy">
-          <Button className="brand-gradient text-white hover:opacity-90">
+          <Button className="brand-gradient text-void hover:opacity-90 font-semibold">
             <Rocket className="h-4 w-4 mr-2" />
             Deploy Agent
           </Button>
@@ -119,11 +127,11 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Activity */}
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2 border-neon-green/10 bg-void/50">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-lg">Recent Activity</CardTitle>
-            <Badge variant="outline" className="text-xs">
-              <Clock className="h-3 w-3 mr-1" />
+            <CardTitle className="text-lg font-rajdhani">Recent Activity</CardTitle>
+            <Badge variant="outline" className="text-xs border-neon-green/20 text-neon-green">
+              <div className="h-1.5 w-1.5 rounded-full bg-neon-green animate-neon-pulse mr-1.5" />
               Live
             </Badge>
           </CardHeader>
@@ -131,23 +139,24 @@ export default function DashboardPage() {
             <div className="space-y-4">
               {RECENT_ACTIVITY.map((activity) => {
                 const Icon = activityIcons[activity.type] ?? Activity;
+                const colorClass = activityColors[activity.type] ?? 'text-muted-foreground bg-muted';
                 return (
                   <div
                     key={activity.id}
-                    className="flex items-start gap-3 pb-4 border-b border-border last:border-0 last:pb-0"
+                    className="flex items-start gap-3 pb-4 border-b border-neon-green/5 last:border-0 last:pb-0"
                   >
-                    <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center shrink-0 mt-0.5">
-                      <Icon className="h-4 w-4 text-muted-foreground" />
+                    <div className={`h-8 w-8 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 ${colorClass}`}>
+                      <Icon className="h-4 w-4" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm">
-                        <span className="font-medium">{activity.agent}</span>
+                        <span className="font-medium text-foreground">{activity.agent}</span>
                         {' '}
                         <span className="text-muted-foreground">
                           {activity.action}
                         </span>
                       </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
+                      <p className="text-xs text-muted-foreground/60 mt-0.5 font-pixel">
                         {activity.timestamp}
                       </p>
                     </div>
@@ -159,15 +168,15 @@ export default function DashboardPage() {
         </Card>
 
         {/* Quick Actions */}
-        <Card>
+        <Card className="border-neon-green/10 bg-void/50">
           <CardHeader>
-            <CardTitle className="text-lg">Quick Actions</CardTitle>
+            <CardTitle className="text-lg font-rajdhani">Quick Actions</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <Link href="/dashboard/deploy" className="block">
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/30 hover:bg-accent transition-all cursor-pointer">
-                <div className="h-10 w-10 rounded-lg bg-brand-purple/10 flex items-center justify-center">
-                  <Rocket className="h-5 w-5 text-brand-purple" />
+              <div className="flex items-center gap-3 p-3 rounded-lg border border-neon-green/10 hover:border-neon-green/25 hover:bg-neon-green/[0.03] transition-all cursor-pointer cyber-card">
+                <div className="h-10 w-10 rounded-lg bg-neon-green/10 border border-neon-green/20 flex items-center justify-center">
+                  <Rocket className="h-5 w-5 text-neon-green" />
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium">Deploy New Agent</p>
@@ -175,13 +184,13 @@ export default function DashboardPage() {
                     0.005 ETH on Base
                   </p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                <ArrowRight className="h-4 w-4 text-neon-green/30" />
               </div>
             </Link>
             <Link href="/dashboard/revenue" className="block">
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/30 hover:bg-accent transition-all cursor-pointer">
-                <div className="h-10 w-10 rounded-lg bg-brand-teal/10 flex items-center justify-center">
-                  <DollarSign className="h-5 w-5 text-brand-teal" />
+              <div className="flex items-center gap-3 p-3 rounded-lg border border-neon-green/10 hover:border-neon-cyan/25 hover:bg-neon-cyan/[0.03] transition-all cursor-pointer cyber-card">
+                <div className="h-10 w-10 rounded-lg bg-neon-cyan/10 border border-neon-cyan/20 flex items-center justify-center">
+                  <DollarSign className="h-5 w-5 text-neon-cyan" />
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium">Claim Revenue</p>
@@ -189,13 +198,13 @@ export default function DashboardPage() {
                     Check your earnings
                   </p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                <ArrowRight className="h-4 w-4 text-neon-cyan/30" />
               </div>
             </Link>
             <Link href="/dashboard/agents" className="block">
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/30 hover:bg-accent transition-all cursor-pointer">
-                <div className="h-10 w-10 rounded-lg bg-brand-blue/10 flex items-center justify-center">
-                  <Bot className="h-5 w-5 text-brand-blue" />
+              <div className="flex items-center gap-3 p-3 rounded-lg border border-neon-green/10 hover:border-neon-purple/25 hover:bg-neon-purple/[0.03] transition-all cursor-pointer cyber-card">
+                <div className="h-10 w-10 rounded-lg bg-neon-purple/10 border border-neon-purple/20 flex items-center justify-center">
+                  <Bot className="h-5 w-5 text-neon-purple" />
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium">Manage Agents</p>
@@ -203,13 +212,13 @@ export default function DashboardPage() {
                     View all your agents
                   </p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                <ArrowRight className="h-4 w-4 text-neon-purple/30" />
               </div>
             </Link>
             <Link href="/dashboard/skills" className="block">
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/30 hover:bg-accent transition-all cursor-pointer">
-                <div className="h-10 w-10 rounded-lg bg-yellow-500/10 flex items-center justify-center">
-                  <TrendingUp className="h-5 w-5 text-yellow-500" />
+              <div className="flex items-center gap-3 p-3 rounded-lg border border-neon-green/10 hover:border-neon-yellow/25 hover:bg-neon-yellow/[0.03] transition-all cursor-pointer cyber-card">
+                <div className="h-10 w-10 rounded-lg bg-neon-yellow/10 border border-neon-yellow/20 flex items-center justify-center">
+                  <TrendingUp className="h-5 w-5 text-neon-yellow" />
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium">Browse Skills</p>
@@ -217,7 +226,7 @@ export default function DashboardPage() {
                     Free & premium skills
                   </p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                <ArrowRight className="h-4 w-4 text-neon-yellow/30" />
               </div>
             </Link>
           </CardContent>
