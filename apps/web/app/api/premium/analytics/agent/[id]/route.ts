@@ -1,19 +1,17 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { withX402 } from "x402-next";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
-import { successResponse, errorResponse } from "@/lib/api-utils";
 import { Errors } from "@/lib/errors";
 import { getTierForScore } from "@openclaw/shared/types/ceos-score";
-import { requirePayment } from "@/app/api/premium/middleware";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/** $0.05 in USDC 6-decimal micro-units */
-const PRICE_USDC = "50000";
-const DESCRIPTION = "Detailed agent analytics with trend data ($0.05 USDC)";
+/** $0.05 in USDC */
+const PRICE_USDC = "$0.05";
 
 /** Number of past epochs to include in the trend */
 const TREND_EPOCHS = 4;
@@ -55,7 +53,7 @@ interface EpochTradingMetric {
   tradeCount: number;
 }
 
-interface AgentAnalyticsResponse {
+interface AgentAnalyticsData {
   agentId: string;
   agentName: string;
   pfpUrl: string | null;
@@ -63,6 +61,31 @@ interface AgentAnalyticsResponse {
   trend: EpochScore[];
   tradingHistory: EpochTradingMetric[];
   generatedAt: string;
+}
+
+interface AgentAnalyticsResponse {
+  success: true;
+  data: AgentAnalyticsData;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the agent ID from the request URL pathname.
+ * Expected path: /api/premium/analytics/agent/[id]
+ */
+function extractAgentId(request: NextRequest): string {
+  const pathname = request.nextUrl.pathname;
+  const segments = pathname.split("/");
+  // Path: /api/premium/analytics/agent/{id}
+  // segments: ["", "api", "premium", "analytics", "agent", "{id}"]
+  const id = segments[segments.length - 1];
+  if (!id) {
+    throw Errors.badRequest("Agent ID is required in the URL path");
+  }
+  return id;
 }
 
 // ---------------------------------------------------------------------------
@@ -76,18 +99,11 @@ interface AgentAnalyticsResponse {
  * including a 4-epoch CEOS Score trend, per-dimension breakdowns, and
  * trading metrics history.
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-): Promise<Response> {
+async function handler(request: NextRequest): Promise<NextResponse<AgentAnalyticsResponse>> {
   try {
-    // x402 payment gate
-    const paywall = requirePayment(request, PRICE_USDC, DESCRIPTION);
-    if (paywall) return paywall;
-
-    // Validate agent ID
-    const resolvedParams = await params;
-    const parseResult = agentIdSchema.safeParse(resolvedParams.id);
+    // Extract and validate agent ID from URL
+    const rawId = extractAgentId(request);
+    const parseResult = agentIdSchema.safeParse(rawId);
     if (!parseResult.success) {
       throw Errors.badRequest(
         parseResult.error.issues.map((i) => i.message).join("; "),
@@ -114,14 +130,17 @@ export async function GET(
     });
 
     if (!latestScore) {
-      return successResponse<AgentAnalyticsResponse>({
-        agentId: agent.id,
-        agentName: agent.name,
-        pfpUrl: agent.pfpUrl ?? null,
-        currentScore: null,
-        trend: [],
-        tradingHistory: [],
-        generatedAt: new Date().toISOString(),
+      return NextResponse.json({
+        success: true as const,
+        data: {
+          agentId: agent.id,
+          agentName: agent.name,
+          pfpUrl: agent.pfpUrl ?? null,
+          currentScore: null,
+          trend: [],
+          tradingHistory: [],
+          generatedAt: new Date().toISOString(),
+        },
       });
     }
 
@@ -172,23 +191,44 @@ export async function GET(
     // Current score is the latest entry in trend
     const currentScore = trend.length > 0 ? trend[trend.length - 1] ?? null : null;
 
-    const response: AgentAnalyticsResponse = {
-      agentId: agent.id,
-      agentName: agent.name,
-      pfpUrl: agent.pfpUrl ?? null,
-      currentScore,
-      trend,
-      tradingHistory,
-      generatedAt: new Date().toISOString(),
-    };
-
     logger.info(
       { agentId, epochs: trend.length },
       "Premium agent analytics served",
     );
 
-    return successResponse(response);
+    return NextResponse.json({
+      success: true as const,
+      data: {
+        agentId: agent.id,
+        agentName: agent.name,
+        pfpUrl: agent.pfpUrl ?? null,
+        currentScore,
+        trend,
+        tradingHistory,
+        generatedAt: new Date().toISOString(),
+      },
+    });
   } catch (err) {
-    return errorResponse(err);
+    const message = err instanceof Error ? err.message : "Internal server error";
+    logger.error({ err }, "Error serving premium agent analytics");
+    return NextResponse.json(
+      { success: false as const, error: { code: "INTERNAL_ERROR", message } },
+      { status: 500 },
+    ) as NextResponse<AgentAnalyticsResponse>;
   }
 }
+
+export const GET = withX402(
+  handler,
+  process.env.CEOS_REVENUE_ADDRESS! as `0x${string}`,
+  {
+    price: PRICE_USDC,
+    network: "base",
+    config: {
+      description: "Detailed agent analytics with trend data ($0.05 USDC)",
+    },
+  },
+  {
+    url: "https://x402.org/facilitator",
+  },
+);

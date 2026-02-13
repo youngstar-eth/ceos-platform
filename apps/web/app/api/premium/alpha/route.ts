@@ -1,18 +1,16 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { withX402 } from "x402-next";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
-import { successResponse, errorResponse } from "@/lib/api-utils";
 import { Errors } from "@/lib/errors";
 import { getTierForScore } from "@openclaw/shared/types/ceos-score";
-import { requirePayment } from "@/app/api/premium/middleware";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/** $0.25 in USDC 6-decimal micro-units */
-const PRICE_USDC = "250000";
-const DESCRIPTION = "Alpha calls — agents with significant rank changes ($0.25 USDC)";
+/** $0.25 in USDC */
+const PRICE_USDC = "$0.25";
 
 /** Minimum absolute rank improvement to qualify as an alpha call */
 const MIN_RANK_DELTA = 5;
@@ -44,10 +42,13 @@ interface AlphaCall {
 }
 
 interface AlphaResponse {
-  currentEpoch: number;
-  previousEpoch: number;
-  generatedAt: string;
-  alphaCalls: AlphaCall[];
+  success: true;
+  data: {
+    currentEpoch: number;
+    previousEpoch: number;
+    generatedAt: string;
+    alphaCalls: AlphaCall[];
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -57,16 +58,12 @@ interface AlphaResponse {
 /**
  * GET /api/premium/alpha
  *
- * x402-gated ($0.25 USDC). Returns "alpha calls" — agents whose rank has
+ * x402-gated ($0.25 USDC). Returns "alpha calls" -- agents whose rank has
  * improved by more than 5 positions compared to the previous epoch. Includes
  * PNL and volume spike data so consumers can identify momentum shifts.
  */
-export async function GET(request: NextRequest): Promise<Response> {
+async function handler(_request: NextRequest): Promise<NextResponse<AlphaResponse>> {
   try {
-    // x402 payment gate
-    const paywall = requirePayment(request, PRICE_USDC, DESCRIPTION);
-    if (paywall) return paywall;
-
     // Determine latest epoch
     const latestScore = await prisma.cEOSScore.findFirst({
       orderBy: { epoch: "desc" },
@@ -81,11 +78,14 @@ export async function GET(request: NextRequest): Promise<Response> {
     const previousEpoch = currentEpoch - 1;
 
     if (previousEpoch < 1) {
-      return successResponse<AlphaResponse>({
-        currentEpoch,
-        previousEpoch: 0,
-        generatedAt: new Date().toISOString(),
-        alphaCalls: [],
+      return NextResponse.json({
+        success: true as const,
+        data: {
+          currentEpoch,
+          previousEpoch: 0,
+          generatedAt: new Date().toISOString(),
+          alphaCalls: [],
+        },
       });
     }
 
@@ -208,20 +208,41 @@ export async function GET(request: NextRequest): Promise<Response> {
     // Sort by rank delta descending (biggest movers first)
     alphaCalls.sort((a, b) => b.rankDelta - a.rankDelta);
 
-    const response: AlphaResponse = {
-      currentEpoch,
-      previousEpoch,
-      generatedAt: new Date().toISOString(),
-      alphaCalls,
-    };
-
     logger.info(
       { currentEpoch, previousEpoch, alphaCount: alphaCalls.length },
       "Premium alpha calls served",
     );
 
-    return successResponse(response);
+    return NextResponse.json({
+      success: true as const,
+      data: {
+        currentEpoch,
+        previousEpoch,
+        generatedAt: new Date().toISOString(),
+        alphaCalls,
+      },
+    });
   } catch (err) {
-    return errorResponse(err);
+    const message = err instanceof Error ? err.message : "Internal server error";
+    logger.error({ err }, "Error serving premium alpha calls");
+    return NextResponse.json(
+      { success: false as const, error: { code: "INTERNAL_ERROR", message } },
+      { status: 500 },
+    ) as NextResponse<AlphaResponse>;
   }
 }
+
+export const GET = withX402(
+  handler,
+  process.env.CEOS_REVENUE_ADDRESS! as `0x${string}`,
+  {
+    price: PRICE_USDC,
+    network: "base",
+    config: {
+      description: "Alpha calls — agents with significant rank changes ($0.25 USDC)",
+    },
+  },
+  {
+    url: "https://x402.org/facilitator",
+  },
+);

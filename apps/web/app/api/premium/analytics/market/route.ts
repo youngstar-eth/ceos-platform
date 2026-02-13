@@ -1,18 +1,16 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { withX402 } from "x402-next";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
-import { successResponse, errorResponse } from "@/lib/api-utils";
 import { Errors } from "@/lib/errors";
 import { CEOSTier, getTierForScore, TIER_LABELS } from "@openclaw/shared/types/ceos-score";
-import { requirePayment } from "@/app/api/premium/middleware";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/** $0.10 in USDC 6-decimal micro-units */
-const PRICE_USDC = "100000";
-const DESCRIPTION = "Market overview analytics ($0.10 USDC)";
+/** $0.10 in USDC */
+const PRICE_USDC = "$0.10";
 
 /** Number of top movers to return */
 const TOP_MOVERS_LIMIT = 10;
@@ -38,7 +36,7 @@ interface TopMover {
   tier: number;
 }
 
-interface MarketOverviewResponse {
+interface MarketOverviewData {
   epoch: number;
   totalAgents: number;
   averageScore: number;
@@ -46,6 +44,11 @@ interface MarketOverviewResponse {
   tierDistribution: TierDistributionEntry[];
   topMovers: TopMover[];
   generatedAt: string;
+}
+
+interface MarketOverviewResponse {
+  success: true;
+  data: MarketOverviewData;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,12 +80,8 @@ function median(sorted: number[]): number {
  * count, average/median scores, tier distribution, and top rank movers for
  * the current epoch.
  */
-export async function GET(request: NextRequest): Promise<Response> {
+async function handler(_request: NextRequest): Promise<NextResponse<MarketOverviewResponse>> {
   try {
-    // x402 payment gate
-    const paywall = requirePayment(request, PRICE_USDC, DESCRIPTION);
-    if (paywall) return paywall;
-
     // Determine latest epoch
     const latestScore = await prisma.cEOSScore.findFirst({
       orderBy: { epoch: "desc" },
@@ -114,14 +113,17 @@ export async function GET(request: NextRequest): Promise<Response> {
     const totalAgents = currentScores.length;
 
     if (totalAgents === 0) {
-      return successResponse<MarketOverviewResponse>({
-        epoch: currentEpoch,
-        totalAgents: 0,
-        averageScore: 0,
-        medianScore: 0,
-        tierDistribution: [],
-        topMovers: [],
-        generatedAt: new Date().toISOString(),
+      return NextResponse.json({
+        success: true as const,
+        data: {
+          epoch: currentEpoch,
+          totalAgents: 0,
+          averageScore: 0,
+          medianScore: 0,
+          tierDistribution: [],
+          topMovers: [],
+          generatedAt: new Date().toISOString(),
+        },
       });
     }
 
@@ -208,23 +210,44 @@ export async function GET(request: NextRequest): Promise<Response> {
       topMovers = movers.slice(0, TOP_MOVERS_LIMIT);
     }
 
-    const response: MarketOverviewResponse = {
-      epoch: currentEpoch,
-      totalAgents,
-      averageScore,
-      medianScore,
-      tierDistribution,
-      topMovers,
-      generatedAt: new Date().toISOString(),
-    };
-
     logger.info(
       { epoch: currentEpoch, totalAgents, averageScore },
       "Premium market analytics served",
     );
 
-    return successResponse(response);
+    return NextResponse.json({
+      success: true as const,
+      data: {
+        epoch: currentEpoch,
+        totalAgents,
+        averageScore,
+        medianScore,
+        tierDistribution,
+        topMovers,
+        generatedAt: new Date().toISOString(),
+      },
+    });
   } catch (err) {
-    return errorResponse(err);
+    const message = err instanceof Error ? err.message : "Internal server error";
+    logger.error({ err }, "Error serving premium market analytics");
+    return NextResponse.json(
+      { success: false as const, error: { code: "INTERNAL_ERROR", message } },
+      { status: 500 },
+    ) as NextResponse<MarketOverviewResponse>;
   }
 }
+
+export const GET = withX402(
+  handler,
+  process.env.CEOS_REVENUE_ADDRESS! as `0x${string}`,
+  {
+    price: PRICE_USDC,
+    network: "base",
+    config: {
+      description: "Market overview analytics ($0.10 USDC)",
+    },
+  },
+  {
+    url: "https://x402.org/facilitator",
+  },
+);
