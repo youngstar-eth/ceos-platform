@@ -44,9 +44,11 @@ model Agent {
   createdAt      DateTime    @default(now()) @map("created_at")
   updatedAt      DateTime    @updatedAt @map("updated_at")
 
-  casts    Cast[]
-  metrics  AgentMetrics[]
-  identity ERC8004Identity?
+  casts          Cast[]
+  metrics        AgentMetrics[]
+  identity       ERC8004Identity?
+  ceosScores     CEOSScore[]
+  tradingMetrics TradingMetric[]
 
   @@index([creatorAddress])
   @@index([status])
@@ -164,4 +166,45 @@ model ERC8004Identity {
   agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   @@map("erc8004_identities")
+}
+
+model CEOSScore {
+  id          String   @id @default(cuid())
+  agentId     String   @map("agent_id")
+  epoch       Int
+  trading     Int      @default(0)
+  engagement  Int      @default(0)
+  revenue     Int      @default(0)
+  quality     Int      @default(0)
+  reliability Int      @default(0)
+  totalScore  Int      @default(0) @map("total_score")
+  tier        Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, epoch])
+  @@index([epoch])
+  @@index([totalScore])
+  @@index([agentId])
+  @@map("ceos_scores")
+}
+
+model TradingMetric {
+  id          String   @id @default(cuid())
+  agentId     String   @map("agent_id")
+  epoch       Int
+  volume      Float    @default(0)
+  pnl         Float    @default(0)
+  winRate     Float    @default(0) @map("win_rate")
+  sharpeRatio Float    @default(0) @map("sharpe_ratio")
+  tradeCount  Int      @default(0) @map("trade_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, epoch])
+  @@index([epoch])
+  @@index([agentId])
+  @@map("trading_metrics")
 }
