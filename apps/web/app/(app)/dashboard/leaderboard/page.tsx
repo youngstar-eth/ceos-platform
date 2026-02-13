@@ -1,28 +1,29 @@
-"use client";
+'use client';
 
-import { useState, useMemo } from "react";
-import { Search, Trophy, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
-import { CEOSTier, TIER_LABELS, TIER_EMOJIS } from "@openclaw/shared/types/ceos-score";
-import { useLeaderboard } from "@/hooks/use-leaderboard";
-import { LeaderboardTable } from "@/components/leaderboard/leaderboard-table";
-import { cn } from "@/lib/utils";
+import { useState, useMemo } from 'react';
+import { Search, Trophy, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { CEOSTier, TIER_LABELS, TIER_EMOJIS } from '@openclaw/shared/types/ceos-score';
+import { useLeaderboard } from '@/hooks/use-leaderboard';
+import { LeaderboardTable } from '@/components/leaderboard/leaderboard-table';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 const ITEMS_PER_PAGE = 25;
 
 const TIER_FILTERS = [
-  { label: "All", value: undefined },
-  { label: `${TIER_EMOJIS[CEOSTier.Bronze]} ${TIER_LABELS[CEOSTier.Bronze]}`, value: CEOSTier.Bronze },
-  { label: `${TIER_EMOJIS[CEOSTier.Silver]} ${TIER_LABELS[CEOSTier.Silver]}`, value: CEOSTier.Silver },
-  { label: `${TIER_EMOJIS[CEOSTier.Gold]} ${TIER_LABELS[CEOSTier.Gold]}`, value: CEOSTier.Gold },
-  { label: `${TIER_EMOJIS[CEOSTier.Platinum]} ${TIER_LABELS[CEOSTier.Platinum]}`, value: CEOSTier.Platinum },
+  { label: 'All', value: undefined },
   { label: `${TIER_EMOJIS[CEOSTier.Diamond]} ${TIER_LABELS[CEOSTier.Diamond]}`, value: CEOSTier.Diamond },
+  { label: `${TIER_EMOJIS[CEOSTier.Platinum]} ${TIER_LABELS[CEOSTier.Platinum]}`, value: CEOSTier.Platinum },
+  { label: `${TIER_EMOJIS[CEOSTier.Gold]} ${TIER_LABELS[CEOSTier.Gold]}`, value: CEOSTier.Gold },
+  { label: `${TIER_EMOJIS[CEOSTier.Silver]} ${TIER_LABELS[CEOSTier.Silver]}`, value: CEOSTier.Silver },
+  { label: `${TIER_EMOJIS[CEOSTier.Bronze]} ${TIER_LABELS[CEOSTier.Bronze]}`, value: CEOSTier.Bronze },
 ] as const;
 
 export default function LeaderboardPage() {
   const [page, setPage] = useState(1);
   const [selectedTier, setSelectedTier] = useState<number | undefined>(undefined);
-  const [sortBy, setSortBy] = useState("totalScore");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState('totalScore');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const { data, isLoading, error, mutate } = useLeaderboard({
     page,
@@ -39,7 +40,7 @@ export default function LeaderboardPage() {
     return data.entries.filter(
       (entry) =>
         entry.agentName.toLowerCase().includes(query) ||
-        entry.agentAddress.toLowerCase().includes(query)
+        entry.agentAddress.toLowerCase().includes(query),
     );
   }, [data?.entries, searchQuery]);
 
@@ -67,35 +68,47 @@ export default function LeaderboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <Trophy className="h-7 w-7 text-yellow-400" />
-            <h1 className="text-3xl font-bold text-white">Leaderboard</h1>
+            <div className="h-10 w-10 rounded-lg bg-neon-yellow/10 border border-neon-yellow/20 flex items-center justify-center">
+              <Trophy className="h-5 w-5 text-neon-yellow" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-3xl font-bold font-orbitron vaporwave-gradient-text">
+                  Leaderboard
+                </h1>
+                <span className="text-[8px] text-vapor-lavender/25 font-pixel mt-2">
+                  リーダーボード
+                </span>
+              </div>
+              <p className="text-muted-foreground text-sm mt-0.5">
+                {data
+                  ? `Epoch ${data.epoch} \u2014 ${data.totalAgents} agents ranked by CEOS Score`
+                  : 'Loading leaderboard...'}
+              </p>
+            </div>
           </div>
-          <p className="text-white/50 mt-1">
-            {data
-              ? `Epoch ${data.epoch} - ${data.totalAgents} agents ranked by CEOS Score`
-              : "Loading leaderboard..."}
-          </p>
         </div>
-        <button
+        <Button
+          variant="outline"
           onClick={mutate}
-          className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-sm text-white/60 hover:text-white hover:border-white/20 transition-colors"
+          className="gap-2"
         >
-          <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+          <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
           Refresh
-        </button>
+        </Button>
       </div>
 
       {/* Search and Filters */}
       <div className="space-y-4">
         {/* Search */}
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neon-purple/40" />
           <input
             type="text"
             placeholder="Search agents by name or address..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-white/[0.02] py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-white/30 focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/10 transition-colors"
+            className="w-full rounded-xl border border-border/60 bg-card/40 backdrop-blur-sm py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-neon-purple/40 focus:outline-none focus:ring-1 focus:ring-neon-purple/20 transition-all font-rajdhani"
           />
         </div>
 
@@ -106,10 +119,10 @@ export default function LeaderboardPage() {
               key={filter.label}
               onClick={() => handleTierChange(filter.value)}
               className={cn(
-                "rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors",
+                'rounded-lg border px-3 py-1.5 text-sm font-rajdhani font-semibold transition-all',
                 selectedTier === filter.value
-                  ? "border-white/20 bg-white/10 text-white"
-                  : "border-white/5 bg-white/[0.02] text-white/50 hover:text-white/70 hover:border-white/10"
+                  ? 'border-neon-pink/30 bg-neon-pink/10 text-neon-pink neon-box-pink'
+                  : 'border-border/40 bg-card/30 text-muted-foreground hover:text-neon-cyan hover:border-neon-cyan/20',
               )}
             >
               {filter.label}
@@ -120,11 +133,11 @@ export default function LeaderboardPage() {
 
       {/* Error State */}
       {error && (
-        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-6 text-center">
-          <p className="text-sm text-red-400">{error}</p>
+        <div className="glass-card rounded-xl border border-neon-pink/20 p-6 text-center">
+          <p className="text-sm text-neon-pink">{error}</p>
           <button
             onClick={mutate}
-            className="mt-3 text-sm text-white/60 underline hover:text-white transition-colors"
+            className="mt-3 text-sm text-muted-foreground underline hover:text-neon-cyan transition-colors"
           >
             Try again
           </button>
@@ -144,8 +157,8 @@ export default function LeaderboardPage() {
       {/* Pagination */}
       {!error && !isLoading && data && data.totalAgents > ITEMS_PER_PAGE && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-white/40">
-            Showing {(page - 1) * ITEMS_PER_PAGE + 1} -{" "}
+          <p className="text-sm text-muted-foreground font-rajdhani">
+            Showing {(page - 1) * ITEMS_PER_PAGE + 1} -{' '}
             {Math.min(page * ITEMS_PER_PAGE, data.totalAgents)} of {data.totalAgents}
           </p>
           <div className="flex items-center gap-2">
@@ -153,10 +166,10 @@ export default function LeaderboardPage() {
               onClick={() => handlePageChange(page - 1)}
               disabled={page <= 1}
               className={cn(
-                "flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm transition-colors",
+                'flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-rajdhani transition-all',
                 page <= 1
-                  ? "border-white/5 text-white/20 cursor-not-allowed"
-                  : "border-white/10 text-white/60 hover:text-white hover:border-white/20"
+                  ? 'border-border/20 text-muted-foreground/30 cursor-not-allowed'
+                  : 'border-border/40 text-muted-foreground hover:text-neon-cyan hover:border-neon-cyan/30',
               )}
             >
               <ChevronLeft className="h-4 w-4" />
@@ -180,10 +193,10 @@ export default function LeaderboardPage() {
                     key={pageNum}
                     onClick={() => handlePageChange(pageNum)}
                     className={cn(
-                      "h-8 w-8 rounded-lg text-sm font-medium transition-colors",
+                      'h-8 w-8 rounded-lg text-sm font-rajdhani font-semibold transition-all',
                       page === pageNum
-                        ? "bg-white/10 text-white border border-white/20"
-                        : "text-white/40 hover:text-white/70"
+                        ? 'bg-neon-purple/15 text-neon-pink border border-neon-purple/30 neon-box-purple'
+                        : 'text-muted-foreground hover:text-neon-cyan',
                     )}
                   >
                     {pageNum}
@@ -195,10 +208,10 @@ export default function LeaderboardPage() {
               onClick={() => handlePageChange(page + 1)}
               disabled={page >= totalPages}
               className={cn(
-                "flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm transition-colors",
+                'flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-rajdhani transition-all',
                 page >= totalPages
-                  ? "border-white/5 text-white/20 cursor-not-allowed"
-                  : "border-white/10 text-white/60 hover:text-white hover:border-white/20"
+                  ? 'border-border/20 text-muted-foreground/30 cursor-not-allowed'
+                  : 'border-border/40 text-muted-foreground hover:text-neon-cyan hover:border-neon-cyan/30',
               )}
             >
               Next

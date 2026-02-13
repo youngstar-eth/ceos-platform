@@ -1,18 +1,11 @@
-"use client";
+'use client';
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useQuery } from '@tanstack/react-query';
 import type {
   LeaderboardEntry,
   LeaderboardResponse,
   CEOSScoreBreakdown,
-} from "@openclaw/shared/types/ceos-score";
-
-interface UseAgentScoreReturn {
-  entry: LeaderboardEntry | null;
-  history: CEOSScoreBreakdown[] | null;
-  isLoading: boolean;
-  error: string | null;
-}
+} from '@openclaw/shared/types/ceos-score';
 
 async function fetchAgentEntry(agentId: string): Promise<LeaderboardEntry | null> {
   const res = await fetch(`/api/leaderboard?limit=100&page=1`);
@@ -27,7 +20,7 @@ async function fetchAgentEntry(agentId: string): Promise<LeaderboardEntry | null
   };
 
   if (!json.success) {
-    throw new Error(json.error?.message ?? "Unknown error fetching leaderboard");
+    throw new Error(json.error?.message ?? 'Unknown error fetching leaderboard');
   }
 
   const match = json.data.entries.find((e) => e.agentId === agentId);
@@ -53,43 +46,27 @@ async function fetchScoreHistory(agentId: string): Promise<CEOSScoreBreakdown[] 
   }
 }
 
-export function useAgentScore(agentId: string): UseAgentScoreReturn {
-  const [entry, setEntry] = useState<LeaderboardEntry | null>(null);
-  const [history, setHistory] = useState<CEOSScoreBreakdown[] | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const fetchIdRef = useRef(0);
+async function fetchAgentData(agentId: string) {
+  const [entry, history] = await Promise.all([
+    fetchAgentEntry(agentId),
+    fetchScoreHistory(agentId),
+  ]);
+  return { entry, history };
+}
 
-  const doFetch = useCallback(() => {
-    if (!agentId) {
-      setIsLoading(false);
-      return;
-    }
+export function useAgentScore(agentId: string) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['agent-score', agentId],
+    queryFn: () => fetchAgentData(agentId),
+    enabled: Boolean(agentId),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
 
-    const id = ++fetchIdRef.current;
-    setIsLoading(true);
-    setError(null);
-
-    Promise.all([fetchAgentEntry(agentId), fetchScoreHistory(agentId)])
-      .then(([entryResult, historyResult]) => {
-        if (id === fetchIdRef.current) {
-          setEntry(entryResult);
-          setHistory(historyResult);
-          setIsLoading(false);
-        }
-      })
-      .catch((err: unknown) => {
-        if (id === fetchIdRef.current) {
-          const message = err instanceof Error ? err.message : "Failed to fetch agent score";
-          setError(message);
-          setIsLoading(false);
-        }
-      });
-  }, [agentId]);
-
-  useEffect(() => {
-    doFetch();
-  }, [doFetch]);
-
-  return { entry, history, isLoading, error };
+  return {
+    entry: data?.entry ?? null,
+    history: data?.history ?? null,
+    isLoading,
+    error: error ? (error instanceof Error ? error.message : 'Failed to fetch agent score') : null,
+  };
 }

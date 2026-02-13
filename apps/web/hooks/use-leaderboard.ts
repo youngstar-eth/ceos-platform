@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import type { LeaderboardResponse } from "@openclaw/shared/types/ceos-score";
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { LeaderboardResponse } from '@openclaw/shared/types/ceos-score';
 
 interface UseLeaderboardParams {
   page?: number;
@@ -10,27 +10,20 @@ interface UseLeaderboardParams {
   sortBy?: string;
 }
 
-interface UseLeaderboardReturn {
-  data: LeaderboardResponse | null;
-  isLoading: boolean;
-  error: string | null;
-  mutate: () => void;
-}
-
 async function fetchLeaderboard(params: UseLeaderboardParams): Promise<LeaderboardResponse> {
   const searchParams = new URLSearchParams();
 
   if (params.page !== undefined) {
-    searchParams.set("page", String(params.page));
+    searchParams.set('page', String(params.page));
   }
   if (params.limit !== undefined) {
-    searchParams.set("limit", String(params.limit));
+    searchParams.set('limit', String(params.limit));
   }
   if (params.tier !== undefined) {
-    searchParams.set("tier", String(params.tier));
+    searchParams.set('tier', String(params.tier));
   }
   if (params.sortBy !== undefined) {
-    searchParams.set("sortBy", params.sortBy);
+    searchParams.set('sortBy', params.sortBy);
   }
 
   const url = `/api/leaderboard?${searchParams.toString()}`;
@@ -40,50 +33,40 @@ async function fetchLeaderboard(params: UseLeaderboardParams): Promise<Leaderboa
     throw new Error(`Failed to fetch leaderboard: ${res.status}`);
   }
 
-  const json = (await res.json()) as { success: boolean; data: LeaderboardResponse; error?: { message: string } };
+  const json = (await res.json()) as {
+    success: boolean;
+    data: LeaderboardResponse;
+    error?: { message: string };
+  };
 
   if (!json.success) {
-    throw new Error(json.error?.message ?? "Unknown error fetching leaderboard");
+    throw new Error(json.error?.message ?? 'Unknown error fetching leaderboard');
   }
 
   return json.data;
 }
 
-export function useLeaderboard(params: UseLeaderboardParams = {}): UseLeaderboardReturn {
+export function useLeaderboard(params: UseLeaderboardParams = {}) {
   const { page, limit, tier, sortBy } = params;
-  const [data, setData] = useState<LeaderboardResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const fetchIdRef = useRef(0);
+  const queryClient = useQueryClient();
 
-  const doFetch = useCallback(() => {
-    const id = ++fetchIdRef.current;
-    setIsLoading(true);
-    setError(null);
+  const queryKey = ['leaderboard', { page, limit, tier, sortBy }] as const;
 
-    fetchLeaderboard({ page, limit, tier, sortBy })
-      .then((result) => {
-        if (id === fetchIdRef.current) {
-          setData(result);
-          setIsLoading(false);
-        }
-      })
-      .catch((err: unknown) => {
-        if (id === fetchIdRef.current) {
-          const message = err instanceof Error ? err.message : "Failed to fetch leaderboard";
-          setError(message);
-          setIsLoading(false);
-        }
-      });
-  }, [page, limit, tier, sortBy]);
+  const { data, isLoading, error } = useQuery({
+    queryKey,
+    queryFn: () => fetchLeaderboard({ page, limit, tier, sortBy }),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
 
-  useEffect(() => {
-    doFetch();
-  }, [doFetch]);
+  function mutate() {
+    queryClient.invalidateQueries({ queryKey: ['leaderboard'] });
+  }
 
-  const mutate = useCallback(() => {
-    doFetch();
-  }, [doFetch]);
-
-  return { data, isLoading, error, mutate };
+  return {
+    data: data ?? null,
+    isLoading,
+    error: error ? (error instanceof Error ? error.message : 'Failed to fetch leaderboard') : null,
+    mutate,
+  };
 }
