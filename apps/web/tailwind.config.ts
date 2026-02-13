@@ -1,12 +1,15 @@
 import type { Config } from 'tailwindcss';
+import path from 'path';
+
+const webDir = path.resolve(__dirname);
 
 const config: Config = {
   darkMode: 'class',
   content: [
-    './app/**/*.{ts,tsx}',
-    './components/**/*.{ts,tsx}',
-    './hooks/**/*.{ts,tsx}',
-    './lib/**/*.{ts,tsx}',
+    path.join(webDir, 'app/**/*.{ts,tsx}'),
+    path.join(webDir, 'components/**/*.{ts,tsx}'),
+    path.join(webDir, 'hooks/**/*.{ts,tsx}'),
+    path.join(webDir, 'lib/**/*.{ts,tsx}'),
   ],
   theme: {
     container: {
