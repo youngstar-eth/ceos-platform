@@ -1,0 +1,210 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum AgentStatus {
+  PENDING
+  DEPLOYING
+  ACTIVE
+  PAUSED
+  TERMINATED
+  FAILED
+}
+
+enum ContentType {
+  ORIGINAL
+  THREAD
+  REPLY
+  RECAST
+  MEDIA
+}
+
+model Agent {
+  id             String      @id @default(cuid())
+  name           String
+  description    String?
+  fid            Int?        @unique
+  creatorAddress String      @map("creator_address")
+  onChainAddress String?     @map("on_chain_address")
+  tokenId        Int?        @map("token_id")
+  status         AgentStatus @default(PENDING)
+  persona        Json
+  skills         String[]
+  strategy       Json
+  signerUuid     String?     @map("signer_uuid")
+  agentUri       String?     @map("agent_uri")
+  pfpUrl         String?     @map("pfp_url")
+  bannerUrl      String?     @map("banner_url")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  casts          Cast[]
+  metrics        AgentMetrics[]
+  identity       ERC8004Identity?
+  ceosScores     CEOSScore[]
+  tradingMetrics TradingMetric[]
+
+  @@index([creatorAddress])
+  @@index([status])
+  @@map("agents")
+}
+
+model Cast {
+  id          String      @id @default(cuid())
+  agentId     String      @map("agent_id")
+  content     String
+  mediaUrl    String?     @map("media_url")
+  hash        String?     @unique
+  type        ContentType @default(ORIGINAL)
+  likes       Int         @default(0)
+  recasts     Int         @default(0)
+  replies     Int         @default(0)
+  publishedAt DateTime?   @map("published_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+  @@index([hash])
+  @@map("casts")
+}
+
+model AgentMetrics {
+  id             String   @id @default(cuid())
+  agentId        String   @map("agent_id")
+  epoch          Int
+  engagementRate Float    @map("engagement_rate")
+  followerGrowth Float    @map("follower_growth")
+  contentQuality Float    @map("content_quality")
+  uptime         Float
+  totalCasts     Int      @default(0) @map("total_casts")
+  totalLikes     Int      @default(0) @map("total_likes")
+  totalRecasts   Int      @default(0) @map("total_recasts")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, epoch])
+  @@map("agent_metrics")
+}
+
+model CreatorScore {
+  id         String   @id @default(cuid())
+  address    String
+  epoch      Int
+  engagement Int
+  growth     Int
+  quality    Int
+  uptime     Int
+  totalScore Int      @map("total_score")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([address, epoch])
+  @@index([address])
+  @@map("creator_scores")
+}
+
+model RevenueEpoch {
+  id           String   @id @default(cuid())
+  epochNumber  Int      @unique @map("epoch_number")
+  totalRevenue BigInt   @map("total_revenue")
+  creatorShare BigInt   @map("creator_share")
+  finalized    Boolean  @default(false)
+  finalizedAt  DateTime? @map("finalized_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  claims RevenueClaim[]
+
+  @@map("revenue_epochs")
+}
+
+model RevenueClaim {
+  id        String   @id @default(cuid())
+  address   String
+  epoch     Int
+  amount    BigInt
+  txHash    String?  @map("tx_hash")
+  claimedAt DateTime @default(now()) @map("claimed_at")
+
+  revenueEpoch RevenueEpoch @relation(fields: [epoch], references: [epochNumber])
+
+  @@unique([address, epoch])
+  @@index([address])
+  @@map("revenue_claims")
+}
+
+model X402Payment {
+  id         String   @id @default(cuid())
+  endpoint   String
+  amount     BigInt
+  payer      String
+  txHash     String?  @map("tx_hash")
+  resourceId String?  @map("resource_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([payer])
+  @@index([endpoint])
+  @@map("x402_payments")
+}
+
+model ERC8004Identity {
+  id               String   @id @default(cuid())
+  agentId          String   @unique @map("agent_id")
+  tokenId          Int      @unique @map("token_id")
+  agentUri         String   @map("agent_uri")
+  reputationScore  Int      @default(0) @map("reputation_score")
+  registrationJson Json?    @map("registration_json")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@map("erc8004_identities")
+}
+
+model CEOSScore {
+  id          String   @id @default(cuid())
+  agentId     String   @map("agent_id")
+  epoch       Int
+  trading     Int      @default(0)
+  engagement  Int      @default(0)
+  revenue     Int      @default(0)
+  quality     Int      @default(0)
+  reliability Int      @default(0)
+  totalScore  Int      @default(0) @map("total_score")
+  tier        Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, epoch])
+  @@index([epoch])
+  @@index([totalScore])
+  @@index([agentId])
+  @@map("ceos_scores")
+}
+
+model TradingMetric {
+  id          String   @id @default(cuid())
+  agentId     String   @map("agent_id")
+  epoch       Int
+  volume      Float    @default(0)
+  pnl         Float    @default(0)
+  winRate     Float    @default(0) @map("win_rate")
+  sharpeRatio Float    @default(0) @map("sharpe_ratio")
+  tradeCount  Int      @default(0) @map("trade_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, epoch])
+  @@index([epoch])
+  @@index([agentId])
+  @@map("trading_metrics")
+}

@@ -1,0 +1,64 @@
+name: Smart Contracts
+
+on:
+  push:
+    paths:
+      - 'contracts/**'
+  pull_request:
+    paths:
+      - 'contracts/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Contracts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Build
+        working-directory: contracts
+        run: forge build
+
+  test:
+    name: Test Contracts
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Run tests with gas report
+        working-directory: contracts
+        run: forge test -vvv --gas-report
+
+  coverage:
+    name: Contract Coverage
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Run coverage
+        working-directory: contracts
+        run: forge coverage

@@ -1,0 +1,27 @@
+{
+  "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": true,
+  "allowedTools": ["bash", "editor", "browser"],
+  "permissions": {
+    "allowGitOperations": true,
+    "allowNetworkAccess": true,
+    "allowFileSystemAccess": true
+  },
+  "agentTeam": {
+    "enabled": true,
+    "maxConcurrentAgents": 6,
+    "worktreeStrategy": "auto",
+    "mergeStrategy": "lead-orchestrator"
+  },
+  "codeStyle": {
+    "typescript": {
+      "strict": true,
+      "noAny": true,
+      "preferNamedExports": true
+    },
+    "solidity": {
+      "version": "0.8.24",
+      "optimizer": true,
+      "runs": 200
+    }
+  }
+}
