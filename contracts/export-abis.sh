@@ -4,7 +4,7 @@ set -euo pipefail
 OUT_DIR="../packages/contract-abis/src"
 mkdir -p "$OUT_DIR"
 
-CONTRACTS=("AgentFactory" "AgentRegistry" "RevenuePool" "CreatorScore" "ERC8004TrustRegistry" "X402PaymentGate")
+CONTRACTS=("AgentFactory" "AgentRegistry" "RevenuePool" "CreatorScore" "ERC8004TrustRegistry" "X402PaymentGate" "CEOSScore")
 
 for name in "${CONTRACTS[@]}"; do
   ABI_PATH="out/${name}.sol/${name}.json"
@@ -26,6 +26,7 @@ import RevenuePoolABI from './RevenuePool.json';
 import CreatorScoreABI from './CreatorScore.json';
 import ERC8004TrustRegistryABI from './ERC8004TrustRegistry.json';
 import X402PaymentGateABI from './X402PaymentGate.json';
+import CEOSScoreABI from './CEOSScore.json';
 
 export {
   AgentFactoryABI,
@@ -34,6 +35,7 @@ export {
   CreatorScoreABI,
   ERC8004TrustRegistryABI,
   X402PaymentGateABI,
+  CEOSScoreABI,
 };
 
 export const CONTRACT_ABIS = {
@@ -43,6 +45,7 @@ export const CONTRACT_ABIS = {
   CreatorScore: CreatorScoreABI,
   ERC8004TrustRegistry: ERC8004TrustRegistryABI,
   X402PaymentGate: X402PaymentGateABI,
+  CEOSScore: CEOSScoreABI,
 } as const;
 EOF
 
