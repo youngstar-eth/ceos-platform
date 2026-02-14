@@ -1,0 +1,7 @@
+# ceos.run Platform — Code Owners
+
+/contracts/ @youngstar-eth
+/apps/web/ @youngstar-eth
+/apps/agent-runtime/ @youngstar-eth
+/prisma/ @youngstar-eth
+/.github/ @youngstar-eth

@@ -4,17 +4,75 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      deploy_contracts:
+        description: 'Deploy smart contracts'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'base-sepolia'
+          - 'base-mainnet'
 
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  docker-build-push:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.web
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/web:latest
+            ghcr.io/${{ github.repository }}/web:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.runtime
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/agent-runtime:latest
+            ghcr.io/${{ github.repository }}/agent-runtime:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   deploy-web:
     name: Deploy Web (Vercel)
     runs-on: ubuntu-latest
+    needs: [docker-build-push]
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Deploy to Vercel
         uses: amondnet/vercel-action@v25
         with:
@@ -26,10 +84,14 @@ jobs:
   deploy-runtime:
     name: Deploy Agent Runtime (Railway)
     runs-on: ubuntu-latest
+    needs: [docker-build-push]
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Install Railway CLI
         run: npm install -g @railway/cli
+
       - name: Deploy to Railway
         run: railway up --service agent-runtime --detach
         env:
@@ -40,15 +102,69 @@ jobs:
     runs-on: ubuntu-latest
     needs: [deploy-web]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - run: npm ci
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Run Prisma migrations
         run: npx prisma migrate deploy
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+  deploy-contracts:
+    name: Deploy Smart Contracts
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_contracts != 'false' && github.event.inputs.deploy_contracts != ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Set RPC URL
+        id: rpc
+        run: |
+          if [ "${{ github.event.inputs.deploy_contracts }}" = "base-mainnet" ]; then
+            echo "rpc_url=${{ secrets.BASE_RPC_URL }}" >> "$GITHUB_OUTPUT"
+            echo "chain_id=8453" >> "$GITHUB_OUTPUT"
+            echo "script=DeployMainnet" >> "$GITHUB_OUTPUT"
+          else
+            echo "rpc_url=${{ secrets.BASE_SEPOLIA_RPC_URL }}" >> "$GITHUB_OUTPUT"
+            echo "chain_id=84532" >> "$GITHUB_OUTPUT"
+            echo "script=Deploy" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy contracts
+        working-directory: contracts
+        run: |
+          forge script script/${{ steps.rpc.outputs.script }}.s.sol \
+            --rpc-url "${{ steps.rpc.outputs.rpc_url }}" \
+            --chain-id ${{ steps.rpc.outputs.chain_id }} \
+            --broadcast \
+            --verify \
+            --etherscan-api-key "${{ secrets.BASESCAN_API_KEY }}" \
+            -vvv
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          TREASURY_ADDRESS: ${{ secrets.TREASURY_ADDRESS }}
+
+      - name: Output deployed addresses
+        if: always()
+        run: |
+          echo "## Contract Deployment Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "Network: ${{ github.event.inputs.deploy_contracts }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Chain ID: ${{ steps.rpc.outputs.chain_id }}" >> "$GITHUB_STEP_SUMMARY"
 
   verify:
     name: Post-Deploy Verification
