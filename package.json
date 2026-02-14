@@ -45,6 +45,7 @@
     ]
   },
   "dependencies": {
+    "@coinbase/coinbase-sdk": "^0.25.0",
     "@prisma/client": "^6.19.2",
     "prisma": "^6.19.2"
   }

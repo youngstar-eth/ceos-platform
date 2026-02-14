@@ -164,6 +164,20 @@ async function handleDemoDeployment(body: unknown, address: string) {
     }
   }
 
+  // === Awal Wallet Provisioning ===
+  let walletResult: { walletId: string; address: string; email: string } | null = null;
+  try {
+    const { provisionAgentWallet } = await import('@/lib/awal');
+    walletResult = await provisionAgentWallet(data.agentId, agent.name);
+    logger.info({ agentId: data.agentId, walletAddress: walletResult.address }, 'Awal wallet provisioned');
+  } catch (walletError) {
+    // Wallet provisioning failure is non-fatal — agent can still operate without wallet
+    logger.warn(
+      { agentId: data.agentId, error: walletError instanceof Error ? walletError.message : String(walletError) },
+      'Awal wallet provisioning failed — agent will operate without autonomous wallet',
+    );
+  }
+
   const updated = await prisma.agent.update({
     where: { id: data.agentId },
     data: {
@@ -173,6 +187,10 @@ async function handleDemoDeployment(body: unknown, address: string) {
       signerUuid,
       ...(generatedPfpUrl && { pfpUrl: generatedPfpUrl }),
       ...(generatedBannerUrl && { bannerUrl: generatedBannerUrl }),
+      walletAddress: walletResult?.address ?? null,
+      walletEmail: walletResult?.email ?? null,
+      walletSessionLimit: Number(process.env.AWAL_DEFAULT_SESSION_LIMIT ?? 50),
+      walletTxLimit: Number(process.env.AWAL_DEFAULT_TX_LIMIT ?? 10),
     },
   });
 

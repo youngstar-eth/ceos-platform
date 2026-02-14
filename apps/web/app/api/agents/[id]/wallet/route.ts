@@ -18,6 +18,7 @@ interface WalletStatusResponse {
   autoFund: boolean;
   totalSpent: string | null;
   transactionCount: number;
+  usdcBalance: string | null;
 }
 
 export const GET = withRateLimit(RATE_LIMITS.api, async (
@@ -53,6 +54,40 @@ export const GET = withRateLimit(RATE_LIMITS.api, async (
     _sum: { amount: true },
   });
 
+  // Fetch on-chain USDC balance if wallet exists
+  let usdcBalance: string | null = null;
+  if (agent.walletAddress) {
+    try {
+      const { createPublicClient, http } = await import('viem');
+      const { base, baseSepolia } = await import('viem/chains');
+      const chainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 84532);
+      const chain = chainId === 8453 ? base : baseSepolia;
+      const rpcUrl = chainId === 8453
+        ? (process.env.BASE_RPC_URL ?? 'https://mainnet.base.org')
+        : (process.env.BASE_SEPOLIA_RPC_URL ?? 'https://sepolia.base.org');
+      const client = createPublicClient({ chain, transport: http(rpcUrl) });
+
+      const USDC_ADDRESS = chainId === 8453
+        ? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+        : '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+      const balance = await client.readContract({
+        address: USDC_ADDRESS as `0x${string}`,
+        abi: [{
+          name: 'balanceOf',
+          type: 'function',
+          stateMutability: 'view',
+          inputs: [{ name: 'account', type: 'address' }],
+          outputs: [{ name: '', type: 'uint256' }],
+        }],
+        functionName: 'balanceOf',
+        args: [agent.walletAddress as `0x${string}`],
+      });
+      usdcBalance = (Number(balance) / 1e6).toFixed(6);
+    } catch {
+      usdcBalance = null;
+    }
+  }
+
   const response: WalletStatusResponse = {
     address: agent.walletAddress,
     email: agent.walletEmail,
@@ -61,6 +96,7 @@ export const GET = withRateLimit(RATE_LIMITS.api, async (
     autoFund: agent.walletAutoFund,
     totalSpent: totalSpentResult._sum.amount?.toString() ?? '0',
     transactionCount: agent._count.walletTransactions,
+    usdcBalance,
   };
 
   return NextResponse.json({ success: true, data: response });
