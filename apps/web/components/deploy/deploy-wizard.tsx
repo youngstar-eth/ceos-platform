@@ -43,7 +43,7 @@ export function DeployWizard() {
 
   const { deploy, status: onChainStatus, txHash, error: onChainError, reset } = useDeploy();
   const { address } = useAccount();
-  const { signMessageAsync } = useSignMessage();
+  const { signMessageAsync: _signMessageAsync } = useSignMessage();
   const router = useRouter();
 
   const status = DEMO_MODE ? demoStatus : onChainStatus;

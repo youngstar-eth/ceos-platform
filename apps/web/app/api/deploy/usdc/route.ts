@@ -82,7 +82,8 @@ async function createFarcasterAccount(options: {
   const custodyAddress = account.address;
 
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
-  const eip712Signer = new ViemLocalEip712Signer(account);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- viem version mismatch between workspace packages
+  const eip712Signer = new ViemLocalEip712Signer(account as any);
 
   const publicClient = createPublicClient({
     chain: optimism,

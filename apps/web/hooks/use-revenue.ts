@@ -71,10 +71,11 @@ export function useClaimRevenue() {
 
   const { writeContract, data: txHash, isPending, error } = useWriteContract();
 
-  const claim = () => {
+  const claim = (epoch: bigint) => {
     writeContract({
       ...contract,
-      functionName: 'claim',
+      functionName: 'claimRevenue',
+      args: [epoch],
     });
   };
 
@@ -89,16 +90,16 @@ export function useClaimRevenue() {
   };
 }
 
-export function useClaimableAmount() {
+export function useClaimableAmount(epoch?: bigint) {
   const { address } = useAccount();
   const contract = getRevenuePoolContract();
 
   return useReadContract({
     ...contract,
-    functionName: 'claimableAmount',
-    args: address ? [address] : undefined,
+    functionName: 'getClaimable',
+    args: address && epoch !== undefined ? [address, epoch] : undefined,
     query: {
-      enabled: !!address,
+      enabled: !!address && epoch !== undefined,
     },
   });
 }
@@ -111,25 +112,25 @@ export function useCreatorScore(address?: string) {
   });
 }
 
-export function useOnChainCreatorScore() {
+export function useOnChainCreatorScore(epoch?: bigint) {
   const { address } = useAccount();
   const contract = getCreatorScoreContract();
 
   return useReadContract({
     ...contract,
     functionName: 'getScore',
-    args: address ? [address] : undefined,
+    args: address && epoch !== undefined ? [address, epoch] : undefined,
     query: {
-      enabled: !!address,
+      enabled: !!address && epoch !== undefined,
     },
   });
 }
 
 export function useCurrentEpoch() {
-  const contract = getCreatorScoreContract();
+  const contract = getRevenuePoolContract();
 
   return useReadContract({
     ...contract,
-    functionName: 'currentEpoch',
+    functionName: 'getCurrentEpoch',
   });
 }

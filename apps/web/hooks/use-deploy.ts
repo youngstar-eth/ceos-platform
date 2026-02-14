@@ -19,6 +19,7 @@ export type DeployStatus =
 
 interface DeployAgentParams {
   name: string;
+  symbol?: string;
   metadataUri: string;
 }
 
@@ -54,7 +55,7 @@ export function useDeploy() {
         writeContract({
           ...contract,
           functionName: 'deployAgent',
-          args: [params.name, params.metadataUri],
+          args: [params.name, params.symbol ?? params.name.toUpperCase().slice(0, 5), params.metadataUri],
           value: parseEther('0.005'),
         });
 
@@ -101,6 +102,6 @@ export function useDeployFee() {
 
   return useReadContract({
     ...contract,
-    functionName: 'deployFee',
+    functionName: 'getDeployFee',
   });
 }

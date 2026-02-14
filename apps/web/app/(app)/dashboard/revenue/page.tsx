@@ -17,9 +17,10 @@ import {
 
 export default function RevenuePage() {
   const { address } = useAccount();
-  const { data: claimableRaw } = useClaimableAmount();
-  const { claim, isPending: isClaimPending } = useClaimRevenue();
   const { data: epochRaw } = useCurrentEpoch();
+  const currentEpochBigInt = epochRaw as bigint | undefined;
+  const { data: claimableRaw } = useClaimableAmount(currentEpochBigInt);
+  const { claim, isPending: isClaimPending } = useClaimRevenue();
   const { data: scoreResponse, isLoading: scoreLoading } = useCreatorScore(address);
 
   const claimableAmount = (claimableRaw as bigint) ?? 0n;
@@ -80,7 +81,11 @@ export default function RevenuePage() {
       {/* Claim */}
       <ClaimButton
         claimableAmount={claimableAmount}
-        onClaim={claim}
+        onClaim={() => {
+          if (currentEpochBigInt !== undefined) {
+            claim(currentEpochBigInt);
+          }
+        }}
         isPending={isClaimPending}
       />
 

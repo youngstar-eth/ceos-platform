@@ -104,7 +104,7 @@ export async function GET(
       '30d': 30 * 24 * 60 * 60 * 1000,
       '90d': 90 * 24 * 60 * 60 * 1000,
     };
-    const since = new Date(Date.now() - rangeMs[timeRange]);
+    const since = new Date(Date.now() - (rangeMs[timeRange] ?? 7 * 24 * 60 * 60 * 1000));
 
     // Fetch real data from database
     const [castAggregates, casts, latestMetrics, ceosScores, revenueClaims] = await Promise.all([

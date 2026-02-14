@@ -18,7 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAgents } from '@/hooks/use-agent';
-import { useClaimableAmount, useOnChainCreatorScore } from '@/hooks/use-revenue';
+import { useClaimableAmount, useOnChainCreatorScore, useCurrentEpoch } from '@/hooks/use-revenue';
 
 interface ActivityItem {
   id: string;
@@ -85,8 +85,10 @@ const activityColors: Record<string, string> = {
 
 export default function DashboardPage() {
   const { data: agentsResponse, isLoading: agentsLoading } = useAgents(1, 100);
-  const { data: claimableRaw } = useClaimableAmount();
-  const { data: scoreRaw } = useOnChainCreatorScore();
+  const { data: epochRaw } = useCurrentEpoch();
+  const currentEpochBigInt = epochRaw as bigint | undefined;
+  const { data: claimableRaw } = useClaimableAmount(currentEpochBigInt);
+  const { data: scoreRaw } = useOnChainCreatorScore(currentEpochBigInt);
   const { activities, isLoading: activityLoading } = useRecentActivity();
 
   const agents = agentsResponse?.data ?? [];

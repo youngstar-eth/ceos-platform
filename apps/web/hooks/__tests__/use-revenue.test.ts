@@ -75,7 +75,7 @@ describe('useClaimableAmount', () => {
       isLoading: false,
     });
 
-    const result = useClaimableAmount();
+    const result = useClaimableAmount(5n);
     expect(mocks.mockUseReadContract).toHaveBeenCalled();
   });
 
@@ -85,6 +85,18 @@ describe('useClaimableAmount', () => {
       isConnected: false,
     });
 
+    useClaimableAmount(5n);
+
+    expect(mocks.mockUseReadContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({
+          enabled: false,
+        }),
+      }),
+    );
+  });
+
+  it('disables when no epoch', () => {
     useClaimableAmount();
 
     expect(mocks.mockUseReadContract).toHaveBeenCalledWith(

@@ -27,7 +27,7 @@ function getCdpClient(): Coinbase {
 
     cdpClient = new Coinbase({
       apiKeyName,
-      apiKeyPrivateKey,
+      privateKey: apiKeyPrivateKey,
     });
   }
   return cdpClient;
@@ -43,7 +43,8 @@ export async function provisionAgentWallet(
   logger.info({ agentId, email }, 'Provisioning awal wallet');
 
   // Network: base-mainnet (production) or base-sepolia (testnet)
-  const networkId = serverEnv.NEXT_PUBLIC_CHAIN_ID === 8453
+  const chainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 84532);
+  const networkId = chainId === 8453
     ? 'base-mainnet'
     : 'base-sepolia';
 
@@ -76,7 +77,8 @@ export async function fundAgentWallet(
   const wallet = await getAgentWallet(walletId);
 
   // Faucet (testnet) or transfer (mainnet)
-  if (serverEnv.NEXT_PUBLIC_CHAIN_ID !== 8453) {
+  const currentChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 84532);
+  if (currentChainId !== 8453) {
     const faucetTx = await wallet.faucet(currency);
     return { txHash: faucetTx.getTransactionHash() ?? '' };
   }
