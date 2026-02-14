@@ -22,12 +22,14 @@
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^9.0.0",
     "husky": "^9.0.0",
     "lint-staged": "^15.0.0",
     "prettier": "^3.4.0",
     "turbo": "^2.3.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest-mock-extended": "^3.1.0"
   },
   "engines": {
     "node": ">=20.0.0"
