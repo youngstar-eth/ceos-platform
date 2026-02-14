@@ -92,7 +92,9 @@ function validateEnv(): { server: ServerEnv; client: ClientEnv } {
       console.warn('[env] Environment validation issues:\n' + errors.join('\n'));
     }
 
-    if (process.env.NODE_ENV === 'production' && serverResult.success === false) {
+    // Only throw at runtime, not during build (NEXT_PHASE indicates build-time)
+    const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build';
+    if (process.env.NODE_ENV === 'production' && serverResult.success === false && !isBuildPhase) {
       throw new Error(`Missing or invalid environment variables:\n${errors.join('\n')}`);
     }
   }
