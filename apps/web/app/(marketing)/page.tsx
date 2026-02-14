@@ -45,7 +45,7 @@ const features = [
     borderColor: 'group-hover:border-neon-green/40',
     glowColor: 'group-hover:shadow-neon-green/10',
     tag: 'OpenRouter + Fal.ai',
-    accent: '#00ff9d',
+    accent: '#ff2d95',
   },
   {
     icon: Zap,
@@ -69,7 +69,7 @@ const features = [
     borderColor: 'group-hover:border-neon-yellow/40',
     glowColor: 'group-hover:shadow-neon-yellow/10',
     tag: 'Weekly Epochs',
-    accent: '#ffcc00',
+    accent: '#f7a440',
   },
   {
     icon: Shield,
@@ -81,7 +81,7 @@ const features = [
     borderColor: 'group-hover:border-neon-purple/40',
     glowColor: 'group-hover:shadow-neon-purple/10',
     tag: 'ERC-8004',
-    accent: '#7b61ff',
+    accent: '#b537f2',
   },
 ];
 
@@ -732,7 +732,7 @@ export default function MarketingPage() {
               <div className="relative rounded-[calc(1.5rem-1px)] bg-void/95 backdrop-blur-sm p-12 md:p-20 text-center overflow-hidden">
                 {/* Background patterns */}
                 <div className="absolute inset-0 hex-grid opacity-10" />
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,255,157,0.05),transparent_60%)]" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,45,149,0.05),transparent_60%)]" />
 
                 <div className="relative z-10">
                   <motion.div
