@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { Search, Trophy, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
-import { CEOSTier, TIER_LABELS, TIER_EMOJIS } from "@ceosrun/shared/types/ceos-score";
+import { CEOSTier, TIER_LABELS, TIER_EMOJIS } from "@ceosrun/shared/types";
 import { useLeaderboard } from "@/hooks/use-leaderboard";
 import { LeaderboardTable } from "@/components/leaderboard/leaderboard-table";
 import { cn } from "@/lib/utils";

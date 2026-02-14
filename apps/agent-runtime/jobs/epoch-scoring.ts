@@ -8,7 +8,7 @@ import {
   calculateReliabilityScore,
   calculateEpochBenchmarks,
 } from "@ceosrun/shared/utils/scoring-engine";
-import type { CEOSScoreBreakdown } from "@ceosrun/shared/types/ceos-score";
+import type { CEOSScoreBreakdown } from "@ceosrun/shared/types";
 
 const prisma = new PrismaClient();
 

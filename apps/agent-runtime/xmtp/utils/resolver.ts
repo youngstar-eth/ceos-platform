@@ -5,7 +5,7 @@
  * No external dependencies — pure string matching.
  * ============================================================ */
 
-import type { LeaderboardEntry } from "@ceosrun/shared/types/ceos-score";
+import type { LeaderboardEntry } from "@ceosrun/shared/types";
 
 // ---------------------------------------------------------------------------
 // Constants

@@ -1,7 +1,7 @@
 "use client";
 
 import { TrendingUp, DollarSign, Target, BarChart3, Hash } from "lucide-react";
-import type { TradingMetrics } from "@ceosrun/shared/types/ceos-score";
+import type { TradingMetrics } from "@ceosrun/shared/types";
 import { formatVolume, formatPnl, formatWinRate } from "@/lib/leaderboard-utils";
 import { cn } from "@/lib/utils";
 

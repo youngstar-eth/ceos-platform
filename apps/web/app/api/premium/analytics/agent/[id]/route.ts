@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { successResponse, errorResponse } from "@/lib/api-utils";
 import { Errors } from "@/lib/errors";
-import { getTierForScore } from "@ceosrun/shared/types/ceos-score";
+import { getTierForScore } from "@ceosrun/shared/types";
 import { requirePayment } from "@/app/api/premium/middleware";
 
 // ---------------------------------------------------------------------------

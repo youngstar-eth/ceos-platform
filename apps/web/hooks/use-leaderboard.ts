@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { LeaderboardResponse } from "@ceosrun/shared/types/ceos-score";
+import type { LeaderboardResponse } from "@ceosrun/shared/types";
 
 interface UseLeaderboardParams {
   page?: number;

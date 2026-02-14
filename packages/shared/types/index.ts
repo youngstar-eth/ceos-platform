@@ -2,6 +2,9 @@
  * @ceosrun/shared — Shared TypeScript types
  * ============================================================ */
 
+// Re-export CEOS Score types for subpath compatibility
+export * from "./ceos-score";
+
 // ---------------------------------------------------------------------------
 // API Response Types
 // ---------------------------------------------------------------------------

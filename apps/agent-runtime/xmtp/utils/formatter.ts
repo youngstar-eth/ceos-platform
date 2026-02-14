@@ -11,7 +11,7 @@ import {
   TIER_EMOJIS,
   TIER_LABELS,
   CEOS_WEIGHTS,
-} from "@ceosrun/shared/types/ceos-score";
+} from "@ceosrun/shared/types";
 
 // ---------------------------------------------------------------------------
 // Constants

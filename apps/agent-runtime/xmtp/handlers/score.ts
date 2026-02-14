@@ -8,7 +8,7 @@
 import type {
   LeaderboardEntry,
   LeaderboardResponse,
-} from "@ceosrun/shared/types/ceos-score";
+} from "@ceosrun/shared/types";
 import { xmtpConfig } from "../config.js";
 import { formatScoreBreakdown, formatTradingStats } from "../utils/formatter.js";
 import {

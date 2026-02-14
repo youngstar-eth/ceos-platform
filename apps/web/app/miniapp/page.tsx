@@ -6,8 +6,9 @@ import {
   TIER_EMOJIS,
   TIER_LABELS,
   getTierForScore,
-} from "@ceosrun/shared/types/ceos-score";
-import type { LeaderboardResponse, LeaderboardEntry } from "@ceosrun/shared/types/ceos-score";
+  type LeaderboardResponse,
+  type LeaderboardEntry,
+} from "@ceosrun/shared/types";
 
 function LeaderboardContent() {
   const [data, setData] = useState<LeaderboardResponse | null>(null);

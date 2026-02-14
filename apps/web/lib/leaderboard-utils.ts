@@ -1,4 +1,4 @@
-import { CEOSTier } from "@ceosrun/shared/types/ceos-score";
+import { CEOSTier } from "@ceosrun/shared/types";
 
 /**
  * Format a score number with comma separators.

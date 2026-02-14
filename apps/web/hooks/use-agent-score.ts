@@ -5,7 +5,7 @@ import type {
   LeaderboardEntry,
   LeaderboardResponse,
   CEOSScoreBreakdown,
-} from "@ceosrun/shared/types/ceos-score";
+} from "@ceosrun/shared/types";
 
 interface UseAgentScoreReturn {
   entry: LeaderboardEntry | null;
