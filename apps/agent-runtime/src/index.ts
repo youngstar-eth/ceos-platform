@@ -1,4 +1,5 @@
 import IORedis from 'ioredis';
+import { Queue } from 'bullmq';
 import { PrismaClient } from '@prisma/client';
 import { config, logger } from './config.js';
 import { ContentPipeline } from './core/content-pipeline.js';
@@ -16,6 +17,8 @@ import { createPostingWorker } from '../workers/posting-worker.js';
 import { createSchedulerWorker } from '../workers/scheduler.js';
 import { getStrategy } from './strategies/posting.js';
 
+const METRICS_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
 const AGENT_POLL_INTERVAL_MS = 60 * 1000; // Check for new agents every 60 seconds
 
@@ -29,6 +32,7 @@ interface RuntimeContext {
   falAi: FalAiClient;
   neynar: NeynarClient;
   baseChain: BaseChainClient | null;
+  metricsQueue: Queue;
 }
 
 let runtimeContext: RuntimeContext | null = null;
@@ -98,6 +102,49 @@ async function loadAndScheduleAgents(
     logger.error(
       { error: error instanceof Error ? error.message : String(error) },
       'Failed to load agents from database',
+    );
+  }
+}
+
+/**
+ * Schedule repeatable metrics collection jobs for all active agents.
+ * Each agent gets a unique repeatable job that runs every 30 minutes.
+ */
+async function scheduleMetricsJobs(
+  prisma: PrismaClient,
+  metricsQueue: Queue,
+): Promise<void> {
+  try {
+    const agents = await prisma.agent.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true, fid: true, name: true },
+    });
+
+    for (const agent of agents) {
+      if (!agent.fid) continue;
+
+      await metricsQueue.add(
+        'collect-metrics',
+        { agentId: agent.id, fid: agent.fid },
+        {
+          jobId: `metrics-${agent.id}`,
+          repeat: {
+            every: METRICS_INTERVAL_MS,
+          },
+          removeOnComplete: 50,
+          removeOnFail: 20,
+        },
+      );
+    }
+
+    logger.info(
+      { agentCount: agents.filter((a) => a.fid).length, intervalMs: METRICS_INTERVAL_MS },
+      'Metrics collection jobs scheduled',
+    );
+  } catch (error) {
+    logger.error(
+      { error: error instanceof Error ? error.message : String(error) },
+      'Failed to schedule metrics jobs',
     );
   }
 }
@@ -198,8 +245,15 @@ async function bootstrap(): Promise<RuntimeContext> {
 
   logger.info('BullMQ workers initialized');
 
+  // 5b. Initialize metrics scheduling queue
+  const metricsQueue = new Queue('agent-metrics', { connection: redis });
+  logger.info('Metrics scheduling queue initialized');
+
   // 6. Load ACTIVE agents from database and schedule them
   await loadAndScheduleAgents(prisma, engine);
+
+  // 6b. Schedule repeatable metrics collection jobs
+  await scheduleMetricsJobs(prisma, metricsQueue);
 
   // 7. Start polling for new agents (detects newly deployed agents)
   agentPollTimer = setInterval(() => {
@@ -247,6 +301,10 @@ async function bootstrap(): Promise<RuntimeContext> {
         shutdownScheduler(),
       ]);
       logger.info('Workers shutdown complete');
+
+      // Close metrics queue
+      await metricsQueue.close();
+      logger.info('Metrics queue closed');
 
       // Stop scheduler queues
       await scheduler.shutdown();
@@ -303,6 +361,7 @@ async function bootstrap(): Promise<RuntimeContext> {
     falAi,
     neynar,
     baseChain,
+    metricsQueue,
   };
 
   runtimeContext = context;
