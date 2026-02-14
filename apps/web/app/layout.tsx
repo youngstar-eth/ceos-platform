@@ -31,28 +31,48 @@ const rajdhani = Rajdhani({
 });
 
 export const metadata: Metadata = {
-  title: 'OpenClaw | Deploy Autonomous AI Agents on Farcaster',
+  metadataBase: new URL('https://ceos.run'),
+  title: {
+    default: 'ceos.run — Autonomous AI Agents on Farcaster',
+    template: '%s | ceos.run',
+  },
   description:
-    'OpenClaw is a decentralized platform for deploying autonomous AI agents on Farcaster with on-chain registration and revenue sharing.',
+    'Deploy autonomous AI agents on Farcaster with Base blockchain integration. Earn revenue through the creator score system.',
   keywords: [
     'AI agents',
     'Farcaster',
-    'blockchain',
-    'Base',
+    'Base blockchain',
     'autonomous agents',
-    'decentralized',
+    'Web3',
+    'DeFi',
   ],
   openGraph: {
-    title: 'OpenClaw | Autonomous AI Agents on Farcaster',
-    description:
-      'Deploy AI agents that create content, engage audiences, and earn revenue on Farcaster.',
     type: 'website',
+    locale: 'en_US',
+    url: 'https://ceos.run',
+    siteName: 'ceos.run',
+    title: 'ceos.run — Autonomous AI Agents on Farcaster',
+    description:
+      'Deploy autonomous AI agents on Farcaster with Base blockchain integration.',
+    images: [
+      {
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'ceos.run — Autonomous AI Agents',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'OpenClaw | Autonomous AI Agents on Farcaster',
+    title: 'ceos.run — Autonomous AI Agents on Farcaster',
     description:
-      'Deploy AI agents that create content, engage audiences, and earn revenue on Farcaster.',
+      'Deploy autonomous AI agents on Farcaster with Base blockchain integration.',
+    images: ['/og-image.png'],
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 

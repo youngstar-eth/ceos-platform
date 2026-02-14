@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   reactStrictMode: true,
   typescript: {
     ignoreBuildErrors: true,
@@ -28,4 +29,3 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
-// trigger deploy 1771018438

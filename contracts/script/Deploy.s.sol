@@ -9,10 +9,9 @@ import { CreatorScore } from "../src/CreatorScore.sol";
 import { ERC8004TrustRegistry } from "../src/ERC8004TrustRegistry.sol";
 import { X402PaymentGate } from "../src/X402PaymentGate.sol";
 
-/// @title Deploy
-/// @notice Foundry deploy script for the full OpenClaw protocol contract suite.
-/// @dev Deploys all 6 contracts, wires cross-references, and sets initial configuration.
-///      Usage: forge script script/Deploy.s.sol --rpc-url <RPC> --broadcast --verify
+/// @title Deploy — ceos.run full contract deployment
+/// @notice Deploys all 6 core contracts to Base and wires cross-references.
+/// @dev Usage: forge script script/Deploy.s.sol --rpc-url $BASE_RPC_URL --broadcast --verify
 contract Deploy is Script {
     /// @notice Entry point for the deploy script
     function run() external {
@@ -23,6 +22,8 @@ contract Deploy is Script {
         address treasuryAddress = vm.envAddress("TREASURY_ADDRESS");
 
         console.log("Deployer:", deployer);
+        console.log("Chain ID:", block.chainid);
+        console.log("Balance:", deployer.balance);
         console.log("USDC:", usdcAddress);
         console.log("Treasury:", treasuryAddress);
 
@@ -77,14 +78,15 @@ contract Deploy is Script {
 
         vm.stopBroadcast();
 
-        // Log final deployment summary
-        console.log("=== Deployment Complete ===");
-        console.log("AgentFactory:", address(agentFactory));
-        console.log("AgentRegistry:", address(agentRegistry));
-        console.log("RevenuePool:", address(revenuePool));
-        console.log("CreatorScore:", address(creatorScore));
-        console.log("ERC8004TrustRegistry:", address(trustRegistry));
-        console.log("X402PaymentGate:", address(paymentGate));
+        // Output for .env file — copy these values directly
+        console.log("");
+        console.log("=== .env Values ===");
+        console.log("NEXT_PUBLIC_FACTORY_ADDRESS=", address(agentFactory));
+        console.log("NEXT_PUBLIC_REGISTRY_ADDRESS=", address(agentRegistry));
+        console.log("NEXT_PUBLIC_REVENUE_POOL_ADDRESS=", address(revenuePool));
+        console.log("NEXT_PUBLIC_CREATOR_SCORE_ADDRESS=", address(creatorScore));
+        console.log("NEXT_PUBLIC_ERC8004_REGISTRY_ADDRESS=", address(trustRegistry));
+        console.log("NEXT_PUBLIC_X402_GATE_ADDRESS=", address(paymentGate));
     }
 }
 

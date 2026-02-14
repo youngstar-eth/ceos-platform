@@ -1,7 +1,10 @@
 import { Worker, type Job } from 'bullmq';
 import type { Redis } from 'ioredis';
+import { PrismaClient } from '@prisma/client';
 import pino from 'pino';
 import { logger as rootLogger } from '../src/config.js';
+
+const prisma = new PrismaClient();
 
 interface MetricsJobData {
   agentId: string;
@@ -30,7 +33,6 @@ const QUEUE_NAME = 'metrics-collection';
 const CONCURRENCY = 3;
 const NEYNAR_API_BASE = 'https://api.neynar.com/v2/farcaster';
 const NEYNAR_API_KEY = process.env.NEYNAR_API_KEY ?? '';
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 
 export function createMetricsWorker(
   connection: Redis,
@@ -234,22 +236,37 @@ async function storeMetrics(
   logger: pino.Logger,
 ): Promise<void> {
   try {
-    const res = await fetch(`${APP_URL}/api/agents/${agentId}/metrics`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(metrics),
+    // Store a snapshot in AgentMetricsSnapshot
+    await prisma.agentMetricsSnapshot.create({
+      data: {
+        agentId,
+        totalCasts: metrics.totalCasts,
+        totalLikes: metrics.totalLikes,
+        totalRecasts: metrics.totalRecasts,
+        totalReplies: metrics.totalReplies,
+        totalMentions: metrics.totalMentions,
+        engagementRate: metrics.engagementRate,
+        followerCount: metrics.followerCount,
+        followingCount: metrics.followingCount,
+        collectedAt: new Date(),
+      },
     });
 
-    if (!res.ok) {
-      logger.warn(
-        { agentId, status: res.status },
-        'Failed to store metrics via API',
-      );
-    }
+    // Update agent's latest metrics cache
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: {
+        lastEngagementRate: metrics.engagementRate,
+        lastFollowerCount: metrics.followerCount,
+        lastMetricsAt: new Date(),
+      },
+    });
+
+    logger.debug({ agentId }, 'Metrics stored in database');
   } catch (err) {
     logger.warn(
       { agentId, error: err instanceof Error ? err.message : String(err) },
-      'Failed to store metrics',
+      'Failed to store metrics in database',
     );
   }
 }

@@ -15,15 +15,6 @@ export function formatEth(value: bigint, decimals = 4): string {
   return `${eth.toFixed(decimals)} ETH`;
 }
 
-export function formatUSDC(value: bigint, decimals = 2): string {
-  const usdc = Number(value) / 1e6;
-  return `$${usdc.toFixed(decimals)} USDC`;
-}
-
-export function formatNumber(value: number): string {
-  return new Intl.NumberFormat('en-US').format(value);
-}
-
 export function formatCompactNumber(value: number): string {
   return new Intl.NumberFormat('en-US', {
     notation: 'compact',
@@ -31,6 +22,3 @@ export function formatCompactNumber(value: number): string {
   }).format(value);
 }
 
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
