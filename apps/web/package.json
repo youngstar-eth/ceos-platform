@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate --schema=../../prisma/schema.prisma && next build",
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit"
@@ -56,6 +56,7 @@
     "jsdom": "^28.0.0",
     "postcss": "^8.4.49",
     "typescript": "^5.7.3",
+    "prisma": "^6.19.2",
     "vitest": "^2.1.9"
   }
 }
