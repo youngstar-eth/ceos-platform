@@ -42,7 +42,7 @@ function loadConfig(): EnvConfig {
 export const config = loadConfig();
 
 export const logger = pino({
-  name: 'openclaw-runtime',
+  name: 'ceosrun-runtime',
   level: config.LOG_LEVEL,
   transport:
     config.NODE_ENV === 'development'

@@ -13,9 +13,9 @@ export const wagmiConfig = createConfig({
           walletConnect({
             projectId,
             metadata: {
-              name: 'OpenClaw',
+              name: 'ceos.run',
               description: 'Deploy Autonomous AI Agents on Farcaster',
-              url: process.env.NEXT_PUBLIC_APP_URL ?? 'https://openclaw.xyz',
+              url: process.env.NEXT_PUBLIC_APP_URL ?? 'https://ceos.run',
               icons: [],
             },
           }),

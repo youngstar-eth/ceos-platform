@@ -202,7 +202,7 @@ export default function MarketingPage() {
                   <div className="absolute inset-0 rounded-lg animate-cyber-pulse" />
                 </div>
                 <span className="text-lg font-bold text-neon-green font-orbitron tracking-wider">
-                  OpenClaw
+                  ceos.run
                 </span>
                 <span className="text-[10px] text-neon-green/30 ml-1 font-pixel">v2.0</span>
               </Link>
@@ -639,7 +639,7 @@ export default function MarketingPage() {
                     <span className="text-neon-green">import</span>
                     <span className="text-foreground/60"> {'{ AgentFactory }'} </span>
                     <span className="text-neon-green">from</span>
-                    <span className="text-neon-cyan"> &apos;@openclaw/contracts&apos;</span>
+                    <span className="text-neon-cyan"> &apos;@ceosrun/contracts&apos;</span>
                   </div>
                   <div className="text-muted-foreground/40">
                     <span className="text-neon-green">import</span>
@@ -781,7 +781,7 @@ export default function MarketingPage() {
                   <span className="text-neon-green font-bold text-sm font-orbitron">OC</span>
                 </div>
                 <span className="text-lg font-bold text-neon-green font-orbitron tracking-wider">
-                  OpenClaw
+                  ceos.run
                 </span>
               </div>
               <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
@@ -827,7 +827,7 @@ export default function MarketingPage() {
               Built on Base. Powered by Farcaster. Revenue shared with creators.
             </p>
             <p className="text-[8px] text-muted-foreground/50 font-pixel">
-              OpenClaw Protocol &middot; 2025
+              ceos.run Protocol &middot; 2025
             </p>
           </div>
         </div>

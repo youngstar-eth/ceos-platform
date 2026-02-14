@@ -26,7 +26,7 @@ export function Header() {
               <span className="text-neon-green font-bold text-sm font-orbitron">OC</span>
             </div>
             <span className="text-lg font-bold font-orbitron text-neon-green tracking-wider">
-              OpenClaw
+              ceos.run
             </span>
           </Link>
 

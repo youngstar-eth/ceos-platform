@@ -5,7 +5,7 @@ import type {
   LeaderboardEntry,
   LeaderboardResponse,
   CEOSScoreBreakdown,
-} from "@openclaw/shared/types/ceos-score";
+} from "@ceosrun/shared/types/ceos-score";
 
 interface UseAgentScoreReturn {
   entry: LeaderboardEntry | null;

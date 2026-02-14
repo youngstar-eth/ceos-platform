@@ -25,7 +25,7 @@ function ThemeProvider({ children }: ThemeProviderProps) {
   React.useEffect(() => {
     setMounted(true);
     // Default to dark mode
-    const saved = localStorage.getItem('openclaw-theme');
+    const saved = localStorage.getItem('ceosrun-theme');
     if (!saved) {
       document.documentElement.classList.add('dark');
     } else if (saved === 'dark') {
@@ -46,7 +46,7 @@ export function useTheme() {
   const [theme, setThemeState] = React.useState<'light' | 'dark'>('dark');
 
   React.useEffect(() => {
-    const saved = localStorage.getItem('openclaw-theme') as
+    const saved = localStorage.getItem('ceosrun-theme') as
       | 'light'
       | 'dark'
       | null;
@@ -55,7 +55,7 @@ export function useTheme() {
 
   const setTheme = React.useCallback((newTheme: 'light' | 'dark') => {
     setThemeState(newTheme);
-    localStorage.setItem('openclaw-theme', newTheme);
+    localStorage.setItem('ceosrun-theme', newTheme);
     if (newTheme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {

@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  transpilePackages: ['@openclaw/shared'],
+  transpilePackages: ['@ceosrun/shared'],
   images: {
     remotePatterns: [
       {

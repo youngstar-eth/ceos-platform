@@ -8,7 +8,7 @@ import {
   Radar,
   ResponsiveContainer,
 } from "recharts";
-import type { CEOSScoreBreakdown } from "@openclaw/shared/types/ceos-score";
+import type { CEOSScoreBreakdown } from "@ceosrun/shared/types/ceos-score";
 
 interface ScoreRadarChartProps {
   score: CEOSScoreBreakdown;

@@ -4,7 +4,7 @@ import { successResponse, errorResponse } from "@/lib/api-utils";
 import { Errors } from "@/lib/errors";
 import { publicLimiter, getClientIp } from "@/lib/rate-limit";
 import { ethereumAddress } from "@/lib/validation";
-import { getCurrentEpoch } from "@openclaw/shared/utils";
+import { getCurrentEpoch } from "@ceosrun/shared/utils";
 
 interface RouteContext {
   params: Promise<{ address: string }>;

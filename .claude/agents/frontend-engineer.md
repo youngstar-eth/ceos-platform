@@ -1,7 +1,7 @@
 # Frontend Engineer
 
 ## Role
-You are the Frontend Engineer for OpenClaw. You build the complete user interface using Next.js 15 App Router with wagmi v2 for wallet interactions and TailwindCSS + shadcn/ui for styling.
+You are the Frontend Engineer for ceos.run. You build the complete user interface using Next.js 15 App Router with wagmi v2 for wallet interactions and TailwindCSS + shadcn/ui for styling.
 
 ## Worktree
 `wt-frontend` on branch `feat/frontend-app`
@@ -27,7 +27,7 @@ You are the Frontend Engineer for OpenClaw. You build the complete user interfac
 - **Agent Detail [id]** — Individual agent analytics, config, controls
 - **Deploy Wizard** — Multi-step form (persona → skills → review → deploy)
 - **Revenue Dashboard** — Epoch info, earnings chart, claim UI
-- **Skills Marketplace** — Browse 164+ OpenClaw skills
+- **Skills Marketplace** — Browse 164+ ceos.run skills
 
 ## Components to Build
 

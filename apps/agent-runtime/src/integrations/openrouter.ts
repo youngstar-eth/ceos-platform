@@ -48,8 +48,8 @@ export class OpenRouterClient {
       baseURL: OPENROUTER_BASE_URL,
       apiKey,
       defaultHeaders: {
-        'HTTP-Referer': 'https://openclaw.xyz',
-        'X-Title': 'OpenClaw Agent Runtime',
+        'HTTP-Referer': 'https://ceos.run',
+        'X-Title': 'ceos.run Agent Runtime',
       },
     });
     this.logger = rootLogger.child({ module: 'OpenRouterClient' });

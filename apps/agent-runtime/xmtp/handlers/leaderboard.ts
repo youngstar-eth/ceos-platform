@@ -5,7 +5,7 @@
  * Fetches from the internal leaderboard API and formats results.
  * ============================================================ */
 
-import type { LeaderboardResponse } from "@openclaw/shared/types/ceos-score";
+import type { LeaderboardResponse } from "@ceosrun/shared/types/ceos-score";
 import { xmtpConfig } from "../config.js";
 import { formatLeaderboard } from "../utils/formatter.js";
 

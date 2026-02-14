@@ -150,7 +150,7 @@ async function scheduleMetricsJobs(
 }
 
 async function bootstrap(): Promise<RuntimeContext> {
-  logger.info({ env: config.NODE_ENV, chainId: config.NEXT_PUBLIC_CHAIN_ID }, 'Bootstrapping OpenClaw Agent Runtime');
+  logger.info({ env: config.NODE_ENV, chainId: config.NEXT_PUBLIC_CHAIN_ID }, 'Bootstrapping ceos.run Agent Runtime');
 
   // 1. Initialize Redis connection
   const redis = new IORedis(config.REDIS_URL, {
@@ -372,7 +372,7 @@ async function bootstrap(): Promise<RuntimeContext> {
     integrations: ['openrouter', 'fal-ai', 'neynar', 'base-chain'],
     activeAgents: runningAgents.length,
     agentIds: runningAgents,
-  }, 'OpenClaw Agent Runtime started — autonomous mode active');
+  }, 'ceos.run Agent Runtime started — autonomous mode active');
 
   return context;
 }

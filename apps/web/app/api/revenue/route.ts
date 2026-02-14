@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { successResponse, errorResponse } from "@/lib/api-utils";
 import { publicLimiter, getClientIp } from "@/lib/rate-limit";
-import { getCurrentEpoch } from "@openclaw/shared/utils";
+import { getCurrentEpoch } from "@ceosrun/shared/utils";
 
 /**
  * GET /api/revenue

@@ -1,5 +1,5 @@
 /* ============================================================
- * @openclaw/shared — Shared utility functions
+ * @ceosrun/shared — Shared utility functions
  * ============================================================ */
 
 /**

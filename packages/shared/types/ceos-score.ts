@@ -1,5 +1,5 @@
 /* ============================================================
- * @openclaw/shared — CEOS Score v2 Types
+ * @ceosrun/shared — CEOS Score v2 Types
  *
  * 5-dimension scoring: Trading (30%), Engagement (25%),
  * Revenue (20%), Content Quality (15%), Reliability (10%)

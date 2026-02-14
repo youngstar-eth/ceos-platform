@@ -3,18 +3,18 @@ version: '3.9'
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: openclaw-postgres
+    container_name: ceosrun-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: openclaw
-      POSTGRES_PASSWORD: openclaw
-      POSTGRES_DB: openclaw
+      POSTGRES_USER: ceosrun
+      POSTGRES_PASSWORD: ceosrun
+      POSTGRES_DB: ceosrun
     ports:
       - '5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U openclaw -d openclaw']
+      test: ['CMD-SHELL', 'pg_isready -U ceosrun -d ceosrun']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,7 +22,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: openclaw-redis
+    container_name: ceosrun-redis
     restart: unless-stopped
     command: redis-server --appendonly yes
     ports:
@@ -40,14 +40,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
-    container_name: openclaw-web
+    container_name: ceosrun-web
     restart: unless-stopped
     ports:
       - '3000:3000'
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://openclaw:openclaw@postgres:5432/openclaw
+      DATABASE_URL: postgresql://ceosrun:ceosrun@postgres:5432/ceosrun
       REDIS_URL: redis://redis:6379
     depends_on:
       postgres:
@@ -59,12 +59,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.runtime
-    container_name: openclaw-agent-worker
+    container_name: ceosrun-agent-worker
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://openclaw:openclaw@postgres:5432/openclaw
+      DATABASE_URL: postgresql://ceosrun:ceosrun@postgres:5432/ceosrun
       REDIS_URL: redis://redis:6379
     depends_on:
       postgres:

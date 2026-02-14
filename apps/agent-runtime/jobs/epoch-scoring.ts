@@ -7,8 +7,8 @@ import {
   calculateQualityScore,
   calculateReliabilityScore,
   calculateEpochBenchmarks,
-} from "@openclaw/shared/utils/scoring-engine";
-import type { CEOSScoreBreakdown } from "@openclaw/shared/types/ceos-score";
+} from "@ceosrun/shared/utils/scoring-engine";
+import type { CEOSScoreBreakdown } from "@ceosrun/shared/types/ceos-score";
 
 const prisma = new PrismaClient();
 

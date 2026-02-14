@@ -1,5 +1,5 @@
 /* ============================================================
- * @openclaw/shared — CEOS Score v2 Scoring Engine
+ * @ceosrun/shared — CEOS Score v2 Scoring Engine
  *
  * Percentile-based normalization with log-scale and sigmoid
  * transforms for fair scoring across agents.

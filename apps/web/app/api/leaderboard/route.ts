@@ -4,8 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { successResponse, errorResponse } from "@/lib/api-utils";
 import { publicLimiter, getClientIp } from "@/lib/rate-limit";
-import { getTierForScore } from "@openclaw/shared/types/ceos-score";
-import type { LeaderboardEntry, LeaderboardResponse } from "@openclaw/shared/types/ceos-score";
+import { getTierForScore } from "@ceosrun/shared/types/ceos-score";
+import type { LeaderboardEntry, LeaderboardResponse } from "@ceosrun/shared/types/ceos-score";
 
 const querySchema = z.object({
   epoch: z.coerce.number().int().positive().optional(),

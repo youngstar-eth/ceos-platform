@@ -9,7 +9,7 @@ import {
   TrendingUp,
   TrendingDown,
 } from "lucide-react";
-import { CEOS_WEIGHTS } from "@openclaw/shared/types/ceos-score";
+import { CEOS_WEIGHTS } from "@ceosrun/shared/types/ceos-score";
 import { useAgentScore } from "@/hooks/use-agent-score";
 import { TierBadge } from "@/components/leaderboard/tier-badge";
 import { ScoreRadarChart } from "@/components/leaderboard/score-radar-chart";

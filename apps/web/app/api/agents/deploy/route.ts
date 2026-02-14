@@ -126,7 +126,7 @@ async function handleDemoDeployment(body: unknown, address: string) {
         walletId: NEYNAR_WALLET_ID,
         username,
         displayName: agent.name,
-        bio: persona.slice(0, 160) || `AI agent on Farcaster | Powered by OpenClaw`,
+        bio: persona.slice(0, 160) || `AI agent on Farcaster | Powered by ceos.run`,
         pfpUrl: generatedPfpUrl ?? undefined,
         agentId: agent.id,
       });

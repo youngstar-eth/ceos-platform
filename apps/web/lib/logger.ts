@@ -7,7 +7,7 @@ export const logger = pino({
       ? { target: "pino-pretty", options: { colorize: true } }
       : undefined,
   base: {
-    service: "openclaw-web",
+    service: "ceosrun-web",
   },
   timestamp: pino.stdTimeFunctions.isoTime,
 });

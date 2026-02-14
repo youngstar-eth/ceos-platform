@@ -1,7 +1,7 @@
 /* ============================================================
  * XMTP Chat Agent — Main Entry Point
  *
- * Autonomous XMTP messaging agent for OpenClaw CEOS Score v2.
+ * Autonomous XMTP messaging agent for ceos.run CEOS Score v2.
  * Routes incoming messages to appropriate handlers using
  * regex/keyword matching (no LLM calls).
  *

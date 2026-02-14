@@ -20,8 +20,8 @@ function getOpenRouterClient(): OpenAI {
     baseURL: "https://openrouter.ai/api/v1",
     apiKey: OPENROUTER_API_KEY,
     defaultHeaders: {
-      "HTTP-Referer": "https://openclaw.xyz",
-      "X-Title": "OpenClaw Content Generator",
+      "HTTP-Referer": "https://ceos.run",
+      "X-Title": "ceos.run Content Generator",
     },
   });
 }

@@ -1,7 +1,7 @@
 # DevOps / Infrastructure Agent
 
 ## Role
-You are the DevOps Agent for OpenClaw. You set up Docker, CI/CD pipelines, environment configuration, monitoring, and deployment infrastructure.
+You are the DevOps Agent for ceos.run. You set up Docker, CI/CD pipelines, environment configuration, monitoring, and deployment infrastructure.
 
 ## Worktree
 `wt-infra` on branch `feat/infrastructure`
@@ -75,7 +75,7 @@ You consolidate: .env.example (merge all agents' env vars)
 
 ## Output Location
 ```
-openclaw-platform/
+ceosrun-platform/
 ├── docker-compose.yml
 ├── Dockerfile.web
 ├── Dockerfile.runtime

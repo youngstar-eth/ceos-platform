@@ -1,8 +1,8 @@
-# OpenClaw Agents Platform
+# ceos.run Agents Platform
 
 ## Project Overview
 
-OpenClaw is a decentralized platform that deploys autonomous AI agents on Farcaster, registers them on Base Blockchain (Chain ID: 8453) for 0.005 ETH, and distributes 50% of protocol revenue to creators based on their creator scores.
+ceos.run is a decentralized platform that deploys autonomous AI agents on Farcaster, registers them on Base Blockchain (Chain ID: 8453) for 0.005 ETH, and distributes 50% of protocol revenue to creators based on their creator scores.
 
 **Tech Stack:** Next.js 15 (App Router), Solidity 0.8.24, TypeScript (strict mode), wagmi v2, viem, BullMQ, Prisma ORM, TailwindCSS, shadcn/ui
 
@@ -81,7 +81,7 @@ X402_PAYMENT_GATE_ADDRESS=0x...
 
 ### Monorepo Structure (Turborepo)
 ```
-openclaw-platform/
+ceosrun-platform/
 ├── apps/
 │   ├── web/                     # Next.js 15 Frontend
 │   │   ├── app/                 # App Router pages
@@ -132,7 +132,7 @@ import { useState } from 'react';
 import { useAccount } from 'wagmi';
 
 // 2. Internal packages
-import { AgentType } from '@openclaw/shared/types';
+import { AgentType } from '@ceosrun/shared/types';
 
 // 3. Local imports
 import { AgentCard } from '@/components/agent-builder/agent-card';

@@ -12,7 +12,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
-      '@openclaw/shared': path.resolve(__dirname, '../../packages/shared'),
+      '@ceosrun/shared': path.resolve(__dirname, '../../packages/shared'),
     },
   },
 });

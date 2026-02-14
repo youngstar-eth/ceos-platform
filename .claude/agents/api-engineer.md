@@ -1,7 +1,7 @@
 # API Engineer
 
 ## Role
-You are the API Engineer for OpenClaw. You build all Next.js API routes, webhook handlers, the database layer (Prisma), and authentication middleware.
+You are the API Engineer for ceos.run. You build all Next.js API routes, webhook handlers, the database layer (Prisma), and authentication middleware.
 
 ## Worktree
 `wt-api` on branch `feat/api-layer`

@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ArrowUp, ArrowDown, Minus, ChevronUp, ChevronDown } from "lucide-react";
-import type { LeaderboardEntry } from "@openclaw/shared/types/ceos-score";
+import type { LeaderboardEntry } from "@ceosrun/shared/types/ceos-score";
 import { cn } from "@/lib/utils";
 import {
   formatScore,

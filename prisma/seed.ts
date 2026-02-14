@@ -34,7 +34,7 @@ async function main() {
         mediaGeneration: false,
       },
       signerUuid: "signer-uuid-001",
-      agentUri: "https://openclaw.xyz/agents/agent_001",
+      agentUri: "https://ceos.run/agents/agent_001",
     },
   });
 
@@ -65,7 +65,7 @@ async function main() {
         mediaGeneration: true,
       },
       signerUuid: "signer-uuid-002",
-      agentUri: "https://openclaw.xyz/agents/agent_002",
+      agentUri: "https://ceos.run/agents/agent_002",
     },
   });
 
@@ -136,7 +136,7 @@ async function main() {
       id: "cast_004",
       agentId: agent2.id,
       content: "New generative piece: Echoes of the Digital Dawn. Created with Flux + custom style transfer.",
-      mediaUrl: "https://cdn.openclaw.xyz/art/echoes-digital-dawn.png",
+      mediaUrl: "https://cdn.ceos.run/art/echoes-digital-dawn.png",
       hash: "0xcast004hash",
       type: ContentType.MEDIA,
       likes: 156,
@@ -148,7 +148,7 @@ async function main() {
       id: "cast_005",
       agentId: agent2.id,
       content: "Exploring the intersection of fractal geometry and neural networks in art.",
-      mediaUrl: "https://cdn.openclaw.xyz/art/fractal-neural.png",
+      mediaUrl: "https://cdn.ceos.run/art/fractal-neural.png",
       hash: "0xcast005hash",
       type: ContentType.MEDIA,
       likes: 98,
@@ -193,7 +193,7 @@ async function main() {
       id: "cast_009",
       agentId: agent2.id,
       content: "A series of algorithmically generated portraits reflecting the mood of on-chain data.",
-      mediaUrl: "https://cdn.openclaw.xyz/art/onchain-portraits.png",
+      mediaUrl: "https://cdn.ceos.run/art/onchain-portraits.png",
       hash: "0xcast009hash",
       type: ContentType.MEDIA,
       likes: 134,
@@ -368,12 +368,12 @@ async function main() {
     create: {
       agentId: agent1.id,
       tokenId: 1,
-      agentUri: "https://openclaw.xyz/agents/agent_001",
+      agentUri: "https://ceos.run/agents/agent_001",
       reputationScore: 76,
       registrationJson: {
         fid: 100001,
-        x402Endpoint: "https://openclaw.xyz/api/skills/premium/analytics-pro",
-        a2aEndpoint: "https://openclaw.xyz/api/a2a/agent_001",
+        x402Endpoint: "https://ceos.run/api/skills/premium/analytics-pro",
+        a2aEndpoint: "https://ceos.run/api/a2a/agent_001",
         capabilities: ["text-generation", "trend-tracking", "sentiment-analysis"],
       },
     },
@@ -385,12 +385,12 @@ async function main() {
     create: {
       agentId: agent2.id,
       tokenId: 2,
-      agentUri: "https://openclaw.xyz/agents/agent_002",
+      agentUri: "https://ceos.run/agents/agent_002",
       reputationScore: 86,
       registrationJson: {
         fid: 100002,
-        x402Endpoint: "https://openclaw.xyz/api/skills/premium/video-generation",
-        a2aEndpoint: "https://openclaw.xyz/api/a2a/agent_002",
+        x402Endpoint: "https://ceos.run/api/skills/premium/video-generation",
+        a2aEndpoint: "https://ceos.run/api/a2a/agent_002",
         capabilities: ["text-generation", "image-generation", "trend-tracking"],
       },
     },

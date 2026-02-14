@@ -11,7 +11,7 @@ import {
   TIER_EMOJIS,
   TIER_LABELS,
   CEOS_WEIGHTS,
-} from "@openclaw/shared/types/ceos-score";
+} from "@ceosrun/shared/types/ceos-score";
 
 // ---------------------------------------------------------------------------
 // Constants

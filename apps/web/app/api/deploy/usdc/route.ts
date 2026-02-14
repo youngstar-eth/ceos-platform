@@ -278,7 +278,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           walletId: NEYNAR_WALLET_ID,
           username,
           displayName: agentConfig.name,
-          bio: agentConfig.personality.slice(0, 160) || 'AI agent on Farcaster | Powered by OpenClaw',
+          bio: agentConfig.personality.slice(0, 160) || 'AI agent on Farcaster | Powered by ceos.run',
           pfpUrl: pfpUrl ?? undefined,
           agentId: agent.id,
         });

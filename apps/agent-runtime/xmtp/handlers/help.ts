@@ -33,7 +33,7 @@ export const QUICK_ACTIONS: QuickAction[] = [
  */
 export async function handleHelp(): Promise<string> {
   const helpText = [
-    "OpenClaw CEOS Score Bot",
+    "ceos.run CEOS Score Bot",
     "=".repeat(24),
     "",
     "Available Commands:",

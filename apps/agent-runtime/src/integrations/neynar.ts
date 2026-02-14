@@ -176,7 +176,7 @@ export class NeynarClient {
       deadline: Number(deadline),
       fname: options.username,
       metadata: {
-        bio: options.bio ?? 'AI agent on Farcaster | Powered by OpenClaw',
+        bio: options.bio ?? 'AI agent on Farcaster | Powered by ceos.run',
         pfp_url: options.pfpUrl ?? '',
         display_name: options.displayName,
         url: '',

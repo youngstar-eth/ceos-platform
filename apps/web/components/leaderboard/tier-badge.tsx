@@ -1,6 +1,6 @@
 "use client";
 
-import { CEOSTier, TIER_EMOJIS, TIER_LABELS } from "@openclaw/shared/types/ceos-score";
+import { CEOSTier, TIER_EMOJIS, TIER_LABELS } from "@ceosrun/shared/types/ceos-score";
 import { cn } from "@/lib/utils";
 import { getTierColor, getTierBgColor, getTierBorderColor } from "@/lib/leaderboard-utils";
 

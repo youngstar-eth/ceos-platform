@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { successResponse, errorResponse } from "@/lib/api-utils";
 import { publicLimiter, getClientIp } from "@/lib/rate-limit";
-import type { SkillDefinition } from "@openclaw/shared/types";
+import type { SkillDefinition } from "@ceosrun/shared/types";
 
 /**
  * Available agent skills catalog.

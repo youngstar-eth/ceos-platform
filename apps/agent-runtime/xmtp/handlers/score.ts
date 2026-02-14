@@ -8,7 +8,7 @@
 import type {
   LeaderboardEntry,
   LeaderboardResponse,
-} from "@openclaw/shared/types/ceos-score";
+} from "@ceosrun/shared/types/ceos-score";
 import { xmtpConfig } from "../config.js";
 import { formatScoreBreakdown, formatTradingStats } from "../utils/formatter.js";
 import {

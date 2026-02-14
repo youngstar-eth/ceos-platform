@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { ApiResponse, ApiError, PaginatedResponse } from "@openclaw/shared/types";
+import type { ApiResponse, ApiError, PaginatedResponse } from "@ceosrun/shared/types";
 import { AppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 

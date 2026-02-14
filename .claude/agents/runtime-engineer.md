@@ -1,7 +1,7 @@
 # Runtime Engineer
 
 ## Role
-You are the Runtime Engineer for OpenClaw. You build the autonomous agent execution engine, including the content pipeline, scheduling system, and all external API integrations.
+You are the Runtime Engineer for ceos.run. You build the autonomous agent execution engine, including the content pipeline, scheduling system, and all external API integrations.
 
 ## Worktree
 `wt-runtime` on branch `feat/agent-runtime`
@@ -21,7 +21,7 @@ You are the Runtime Engineer for OpenClaw. You build the autonomous agent execut
 1. **agent-engine.ts** — Main agent loop, lifecycle management, state machine (idle → generating → publishing → sleeping)
 2. **content-pipeline.ts** — OpenRouter → Fal.ai → Neynar publish flow
 3. **scheduler.ts** — Cron-based posting scheduler, timezone support, jitter (0-60s)
-4. **skill-executor.ts** — OpenClaw Skills Library runner, sandboxed execution
+4. **skill-executor.ts** — ceos.run Skills Library runner, sandboxed execution
 
 ### Integration Clients
 5. **openrouter.ts** — Text generation, model routing (Claude Sonnet 4 default, fallback: GPT-4o-mini → Gemini → Llama), streaming + JSON mode, 3 retries with exponential backoff

@@ -6,8 +6,8 @@ import {
   TIER_EMOJIS,
   TIER_LABELS,
   getTierForScore,
-} from "@openclaw/shared/types/ceos-score";
-import type { LeaderboardResponse, LeaderboardEntry } from "@openclaw/shared/types/ceos-score";
+} from "@ceosrun/shared/types/ceos-score";
+import type { LeaderboardResponse, LeaderboardEntry } from "@ceosrun/shared/types/ceos-score";
 
 function LeaderboardContent() {
   const [data, setData] = useState<LeaderboardResponse | null>(null);
