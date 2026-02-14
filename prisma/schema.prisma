@@ -144,8 +144,13 @@ model X402Payment {
   endpoint   String
   amount     BigInt
   payer      String
+  payee      String?
+  signature  String?
   txHash     String?  @map("tx_hash")
   resourceId String?  @map("resource_id")
+  chainId    Int?     @map("chain_id")
+  network    String?
+  verifiedAt DateTime? @map("verified_at")
   createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([payer])

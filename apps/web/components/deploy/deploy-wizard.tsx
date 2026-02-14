@@ -147,7 +147,7 @@ export function DeployWizard() {
   const handleOnChainDeploy = async () => {
     await deploy({
       name: config.persona.name,
-      metadataUri: `ipfs://placeholder/${config.persona.name}`,
+      metadataUri: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://ceos.run'}/api/metadata/${encodeURIComponent(config.persona.name)}`,
     });
   };
 

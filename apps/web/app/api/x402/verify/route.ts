@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { prisma } from '@/lib/prisma';
 import { X402_CONFIG } from '@/lib/x402-config';
 
 // ---------------------------------------------------------------------------
@@ -153,8 +154,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       verifiedAt: new Date().toISOString(),
     };
 
-    // TODO: Persist with Prisma once the X402Payment model is added to schema.prisma
-    // await prisma.x402Payment.create({ data: paymentRecord });
+    await prisma.x402Payment.create({
+      data: {
+        endpoint: request.nextUrl.pathname,
+        amount: BigInt(paymentRecord.amount),
+        payer: paymentRecord.payer.toLowerCase(),
+        payee: paymentRecord.payee,
+        signature: paymentRecord.signature,
+        txHash: paymentRecord.txHash,
+        chainId: paymentRecord.chainId,
+        network: paymentRecord.network,
+        verifiedAt: new Date(paymentRecord.verifiedAt),
+      },
+    });
 
     return NextResponse.json(
       {

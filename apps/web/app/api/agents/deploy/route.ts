@@ -99,14 +99,14 @@ async function handleDemoDeployment(body: unknown, address: string) {
     generatedPfpUrl = profileImages.pfpUrl;
     generatedBannerUrl = profileImages.bannerUrl;
 
-    console.log(
-      "[DEPLOY] Profile images generated:",
+    logger.info(
       { hasPfp: !!generatedPfpUrl, hasBanner: !!generatedBannerUrl },
+      "Profile images generated",
     );
   } catch (err) {
-    console.warn(
-      "[DEPLOY] Profile image generation failed, continuing without images:",
-      err instanceof Error ? err.message : String(err),
+    logger.warn(
+      { error: err instanceof Error ? err.message : String(err) },
+      "Profile image generation failed, continuing without images",
     );
   }
 
@@ -140,11 +140,10 @@ async function handleDemoDeployment(body: unknown, address: string) {
         "Farcaster account created for agent",
       );
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      console.error("[DEPLOY] Failed to create Farcaster account:", errMsg);
-      if (err instanceof Error && err.stack) {
-        console.error("[DEPLOY] Stack:", err.stack);
-      }
+      logger.error(
+        { error: err instanceof Error ? err.message : String(err) },
+        "Failed to create Farcaster account",
+      );
 
       fid = 800000 + Math.floor(Math.random() * 100000);
       signerUuid = `demo-signer-${crypto.randomUUID()}`;
@@ -156,11 +155,11 @@ async function handleDemoDeployment(body: unknown, address: string) {
   if (generatedBannerUrl && signerUuid && !signerUuid.startsWith("demo-signer-")) {
     try {
       await updateFarcasterProfile(signerUuid, { pfpUrl: generatedPfpUrl, bannerUrl: generatedBannerUrl });
-      console.log("[DEPLOY] Banner image set on Farcaster profile");
+      logger.info("Banner image set on Farcaster profile");
     } catch (err) {
-      console.warn(
-        "[DEPLOY] Failed to set banner image, continuing:",
-        err instanceof Error ? err.message : String(err),
+      logger.warn(
+        { error: err instanceof Error ? err.message : String(err) },
+        "Failed to set banner image, continuing",
       );
     }
   }
@@ -241,7 +240,7 @@ async function createFarcasterAccount(options: {
   }
 
   const fidData = (await fidRes.json()) as { fid: number };
-  console.log("[DEPLOY] Reserved FID:", fidData.fid);
+  logger.info({ fid: fidData.fid }, "Reserved FID");
 
   // Step 2: Derive a unique custody wallet per agent from DEPLOYER_PRIVATE_KEY + agentId.
   // This ensures each agent gets its own Farcaster custody address.
@@ -251,7 +250,7 @@ async function createFarcasterAccount(options: {
   );
   const account = privateKeyToAccount(derivedKey);
   const custodyAddress = account.address;
-  console.log("[DEPLOY] Derived custody address for agent:", custodyAddress);
+  logger.info({ custodyAddress }, "Derived custody address for agent");
 
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
 
@@ -270,7 +269,7 @@ async function createFarcasterAccount(options: {
     args: [custodyAddress],
   });
 
-  console.log("[DEPLOY] Custody address:", custodyAddress, "Nonce:", nonce?.toString());
+  logger.info({ custodyAddress, nonce: nonce?.toString() }, "Custody address derived");
 
   // Sign transfer (Neynar pre-registers FID then transfers to our custody address)
   const signatureResult = await eip712Signer.signTransfer({
@@ -285,7 +284,7 @@ async function createFarcasterAccount(options: {
   }
 
   const signature = bytesToHex(signatureResult.value);
-  console.log("[DEPLOY] Signature generated, deadline:", Number(deadline));
+  logger.info({ deadline: Number(deadline) }, "Transfer signature generated");
 
   // Step 3: Register account with Neynar
   const registerRes = await fetch(`${NEYNAR_API_BASE}/user`, {

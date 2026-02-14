@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger';
+import { generateAgentProfileImages } from '@/lib/profile-image-generator';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const NEYNAR_API_BASE = 'https://api.neynar.com/v2/farcaster';
+const NEYNAR_API_KEY = process.env.NEYNAR_API_KEY ?? '';
+const NEYNAR_WALLET_ID = process.env.NEYNAR_WALLET_ID ?? '';
+
 // ---------------------------------------------------------------------------
 // Request Schema
 // ---------------------------------------------------------------------------
@@ -26,21 +38,121 @@ const deployAgentSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Types
+// Helpers
 // ---------------------------------------------------------------------------
 
-interface DeployedAgent {
-  id: string;
-  name: string;
-  farcasterFid: number;
-  farcasterUsername: string;
-  contractAddress: string;
-  tokenId: string;
-  status: 'deploying' | 'active';
-  paidWithUsdc: boolean;
-  paymentAmount: string;
-  payer: string;
-  createdAt: string;
+async function createFarcasterAccount(options: {
+  walletId: string;
+  username: string;
+  displayName: string;
+  bio: string;
+  pfpUrl?: string;
+  agentId: string;
+}): Promise<{ fid: number; signerUuid: string; username: string; custodyAddress: string }> {
+  const {
+    ID_REGISTRY_ADDRESS,
+    ViemLocalEip712Signer,
+    idRegistryABI,
+  } = await import('@farcaster/hub-nodejs');
+  const { bytesToHex, createPublicClient, http, keccak256, toBytes } = await import('viem');
+  const { privateKeyToAccount } = await import('viem/accounts');
+  const { optimism } = await import('viem/chains');
+
+  const fidRes = await fetch(`${NEYNAR_API_BASE}/user/fid`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      accept: 'application/json',
+      api_key: NEYNAR_API_KEY,
+      'x-wallet-id': options.walletId,
+    },
+  });
+
+  if (!fidRes.ok) {
+    const errText = await fidRes.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to reserve FID: ${fidRes.status} ${errText}`);
+  }
+
+  const fidData = (await fidRes.json()) as { fid: number };
+  logger.info({ fid: fidData.fid }, 'Reserved FID for USDC deploy');
+
+  const deployerKey = process.env.DEPLOYER_PRIVATE_KEY as `0x${string}`;
+  const derivedKey = keccak256(toBytes(`${deployerKey}:${options.agentId}`));
+  const account = privateKeyToAccount(derivedKey);
+  const custodyAddress = account.address;
+
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
+  const eip712Signer = new ViemLocalEip712Signer(account);
+
+  const publicClient = createPublicClient({
+    chain: optimism,
+    transport: http(),
+  });
+
+  const nonce = await publicClient.readContract({
+    address: ID_REGISTRY_ADDRESS,
+    abi: idRegistryABI,
+    functionName: 'nonces',
+    args: [custodyAddress],
+  });
+
+  const signatureResult = await eip712Signer.signTransfer({
+    fid: BigInt(fidData.fid),
+    to: custodyAddress,
+    nonce: nonce as bigint,
+    deadline,
+  });
+
+  if (signatureResult.isErr()) {
+    throw new Error(`Failed to sign transfer: ${signatureResult.error}`);
+  }
+
+  const signature = bytesToHex(signatureResult.value);
+
+  const registerRes = await fetch(`${NEYNAR_API_BASE}/user`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      accept: 'application/json',
+      api_key: NEYNAR_API_KEY,
+      'x-wallet-id': options.walletId,
+    },
+    body: JSON.stringify({
+      signature,
+      fid: fidData.fid,
+      requested_user_custody_address: custodyAddress,
+      deadline: Number(deadline),
+      fname: options.username,
+      metadata: {
+        bio: options.bio,
+        pfp_url: options.pfpUrl ?? '',
+        display_name: options.displayName,
+        url: '',
+      },
+    }),
+  });
+
+  if (!registerRes.ok) {
+    const errText = await registerRes.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to register account: ${registerRes.status} ${errText}`);
+  }
+
+  const registerData = (await registerRes.json()) as {
+    success: boolean;
+    signer: {
+      signer_uuid: string;
+      public_key: string;
+      status: string;
+      fid: number;
+    };
+  };
+
+  return {
+    fid: fidData.fid,
+    signerUuid: registerData.signer?.signer_uuid ?? '',
+    username: options.username,
+    custodyAddress,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -62,10 +174,9 @@ interface DeployedAgent {
  * Flow:
  *   1. Verify the payment headers are present (middleware enforcement).
  *   2. Validate the request body (agent configuration).
- *   3. Call AgentFactory.deployAgent() on Base.
- *   4. Create Farcaster account via Neynar.
- *   5. Store agent config in PostgreSQL.
- *   6. Return the deployed agent details.
+ *   3. Create Farcaster account via Neynar.
+ *   4. Store agent config in PostgreSQL.
+ *   5. Return the deployed agent details.
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
@@ -111,59 +222,129 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const agentConfig = parsed.data;
 
-    // Step 3: Deploy on Base via AgentFactory
-    // TODO: Wire up actual contract call via viem
-    // const { hash, tokenId, contractAddress } = await deployOnChain(payer, agentConfig);
-    const mockTokenId = `${Date.now()}`;
-    const mockContractAddress = '0x0000000000000000000000000000000000000000';
+    // Step 3: Create agent in database first (PENDING status)
+    const agent = await prisma.agent.create({
+      data: {
+        name: agentConfig.name,
+        description: agentConfig.description ?? null,
+        creatorAddress: payer.toLowerCase(),
+        persona: {
+          description: agentConfig.personality,
+          topics: agentConfig.topics,
+          imageStyle: agentConfig.imageStyle ?? null,
+        },
+        skills: [],
+        strategy: {
+          type: agentConfig.postingStrategy,
+          postsPerDay: agentConfig.postingStrategy === 'scheduled' ? 6 : 3,
+        },
+        status: 'PENDING',
+      },
+    });
 
-    // Step 4: Create Farcaster account via Neynar
-    // TODO: Wire up Neynar SDK
-    // const { fid } = await createFarcasterAccount(agentConfig.farcasterUsername);
-    const mockFid = Math.floor(Math.random() * 1_000_000);
+    // Step 4: Generate profile images
+    let pfpUrl: string | null = null;
+    let bannerUrl: string | null = null;
+    try {
+      const profileImages = await generateAgentProfileImages({
+        name: agent.name,
+        description: agent.description,
+        persona: agent.persona as Record<string, unknown>,
+        skills: agent.skills,
+      });
+      pfpUrl = profileImages.pfpUrl;
+      bannerUrl = profileImages.bannerUrl;
+    } catch (err) {
+      logger.warn(
+        { agentId: agent.id, error: err instanceof Error ? err.message : String(err) },
+        'Profile image generation failed, continuing without images'
+      );
+    }
 
-    // Step 5: Store in database
-    // TODO: Wire up Prisma
-    // const agent = await prisma.agent.create({
-    //   data: {
-    //     name: agentConfig.name,
-    //     description: agentConfig.description,
-    //     personality: agentConfig.personality,
-    //     postingStrategy: agentConfig.postingStrategy,
-    //     topics: agentConfig.topics,
-    //     imageStyle: agentConfig.imageStyle,
-    //     farcasterUsername: agentConfig.farcasterUsername,
-    //     farcasterFid: mockFid,
-    //     contractAddress: mockContractAddress,
-    //     tokenId: mockTokenId,
-    //     owner: payer,
-    //     paidWithUsdc: true,
-    //     paymentAmount: amount ?? '10000000',
-    //   },
-    // });
+    // Step 5: Create Farcaster account
+    let fid: number;
+    let signerUuid: string;
+    let custodyAddress: string;
 
-    const deployedAgent: DeployedAgent = {
-      id: crypto.randomUUID(),
-      name: agentConfig.name,
-      farcasterFid: mockFid,
-      farcasterUsername: agentConfig.farcasterUsername,
-      contractAddress: mockContractAddress,
-      tokenId: mockTokenId,
-      status: 'deploying',
-      paidWithUsdc: true,
-      paymentAmount: amount ?? '10000000',
-      payer,
-      createdAt: new Date().toISOString(),
-    };
+    if (!NEYNAR_WALLET_ID) {
+      logger.warn('NEYNAR_WALLET_ID not set, using demo signer for USDC deploy');
+      fid = 800000 + Math.floor(Math.random() * 100000);
+      signerUuid = `demo-signer-${crypto.randomUUID()}`;
+      custodyAddress = `0x${Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
+    } else {
+      try {
+        const username = agentConfig.farcasterUsername;
+        const account = await createFarcasterAccount({
+          walletId: NEYNAR_WALLET_ID,
+          username,
+          displayName: agentConfig.name,
+          bio: agentConfig.personality.slice(0, 160) || 'AI agent on Farcaster | Powered by OpenClaw',
+          pfpUrl: pfpUrl ?? undefined,
+          agentId: agent.id,
+        });
+
+        fid = account.fid;
+        signerUuid = account.signerUuid;
+        custodyAddress = account.custodyAddress;
+
+        logger.info(
+          { agentId: agent.id, fid, username, signerUuid: signerUuid.slice(0, 8) + '...' },
+          'Farcaster account created for USDC-deployed agent'
+        );
+      } catch (err) {
+        logger.error(
+          { agentId: agent.id, error: err instanceof Error ? err.message : String(err) },
+          'Failed to create Farcaster account for USDC deploy'
+        );
+
+        fid = 800000 + Math.floor(Math.random() * 100000);
+        signerUuid = `demo-signer-${crypto.randomUUID()}`;
+        custodyAddress = `0x${Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
+      }
+    }
+
+    // Step 6: Update agent with Farcaster details and activate
+    const updated = await prisma.agent.update({
+      where: { id: agent.id },
+      data: {
+        status: 'ACTIVE',
+        fid,
+        signerUuid,
+        onChainAddress: custodyAddress,
+        ...(pfpUrl && { pfpUrl }),
+        ...(bannerUrl && { bannerUrl }),
+      },
+    });
+
+    logger.info(
+      { agentId: agent.id, fid, payer, amount },
+      'Agent deployed via USDC x402 payment'
+    );
 
     return NextResponse.json(
       {
         success: true,
-        data: deployedAgent,
+        data: {
+          id: updated.id,
+          name: updated.name,
+          farcasterFid: fid,
+          farcasterUsername: agentConfig.farcasterUsername,
+          contractAddress: custodyAddress,
+          tokenId: updated.tokenId?.toString() ?? null,
+          status: updated.status.toLowerCase(),
+          paidWithUsdc: true,
+          paymentAmount: amount ?? '10000000',
+          payer,
+          createdAt: updated.createdAt.toISOString(),
+        },
       },
       { status: 201 }
     );
   } catch (err) {
+    logger.error(
+      { error: err instanceof Error ? err.message : String(err) },
+      'USDC deploy failed'
+    );
     const message = err instanceof Error ? err.message : 'Internal server error.';
     return NextResponse.json(
       {

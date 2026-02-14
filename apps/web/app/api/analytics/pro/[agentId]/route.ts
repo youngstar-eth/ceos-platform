@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { prisma } from '@/lib/prisma';
+
 // ---------------------------------------------------------------------------
 // Params Schema
 // ---------------------------------------------------------------------------
@@ -11,58 +13,6 @@ const agentIdSchema = z
   .max(128, 'Agent ID is too long.');
 
 // ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface ProAnalyticsData {
-  agentId: string;
-  overview: {
-    totalCasts: number;
-    totalLikes: number;
-    totalRecasts: number;
-    totalReplies: number;
-    followerCount: number;
-    engagementRate: number;
-    creatorScore: number;
-  };
-  timeSeries: {
-    period: string;
-    casts: number;
-    likes: number;
-    recasts: number;
-    replies: number;
-    engagementRate: number;
-  }[];
-  topCasts: {
-    hash: string;
-    text: string;
-    likes: number;
-    recasts: number;
-    replies: number;
-    timestamp: string;
-  }[];
-  audienceInsights: {
-    topFollowerLocations: { location: string; count: number }[];
-    activeHours: { hour: number; engagementScore: number }[];
-    growthRate: {
-      daily: number;
-      weekly: number;
-      monthly: number;
-    };
-  };
-  revenueMetrics: {
-    totalEarned: string;
-    claimable: string;
-    claimed: string;
-    epochBreakdown: {
-      epoch: number;
-      earned: string;
-      creatorScore: number;
-    }[];
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Route Handler
 // ---------------------------------------------------------------------------
 
@@ -71,16 +21,8 @@ interface ProAnalyticsData {
  *
  * Premium analytics endpoint (x402-gated).
  *
- * Provides detailed metrics, historical time-series data, audience insights,
+ * Provides detailed metrics, historical time-series data,
  * and revenue breakdowns for a specific agent.
- *
- * This endpoint is behind the x402 middleware. By the time the request
- * reaches this handler, payment has already been verified.
- *
- * Headers set by middleware:
- *   - X-PAYMENT-VERIFIED: "true"
- *   - X-PAYMENT-PAYER: wallet address of the payer
- *   - X-PAYMENT-AMOUNT: amount paid in USDC micro-units
  */
 export async function GET(
   request: NextRequest,
@@ -140,60 +82,161 @@ export async function GET(
       );
     }
 
-    // TODO: Replace with actual Prisma + on-chain data aggregation
-    // const agent = await prisma.agent.findUnique({ where: { id: agentId } });
-    // if (!agent) { return 404; }
-    // const metrics = await aggregateMetrics(agentId, timeRange);
+    // Verify agent exists
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+    });
 
-    // Generate time series periods based on range
+    if (!agent) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Agent not found.' },
+        },
+        { status: 404 }
+      );
+    }
+
+    // Calculate time window
+    const rangeMs: Record<string, number> = {
+      '24h': 24 * 60 * 60 * 1000,
+      '7d': 7 * 24 * 60 * 60 * 1000,
+      '30d': 30 * 24 * 60 * 60 * 1000,
+      '90d': 90 * 24 * 60 * 60 * 1000,
+    };
+    const since = new Date(Date.now() - rangeMs[timeRange]);
+
+    // Fetch real data from database
+    const [castAggregates, casts, latestMetrics, ceosScores, revenueClaims] = await Promise.all([
+      // Aggregate cast metrics in the time range
+      prisma.cast.aggregate({
+        where: { agentId, publishedAt: { gte: since } },
+        _sum: { likes: true, recasts: true, replies: true },
+        _count: true,
+      }),
+
+      // Get casts for time series and top casts
+      prisma.cast.findMany({
+        where: { agentId, publishedAt: { gte: since } },
+        orderBy: { likes: 'desc' },
+        take: 50,
+      }),
+
+      // Latest agent metrics
+      prisma.agentMetrics.findFirst({
+        where: { agentId },
+        orderBy: { epoch: 'desc' },
+      }),
+
+      // CEOS Scores for revenue breakdown
+      prisma.cEOSScore.findMany({
+        where: { agentId },
+        orderBy: { epoch: 'desc' },
+        take: 10,
+      }),
+
+      // Revenue claims by the agent's creator
+      prisma.revenueClaim.findMany({
+        where: { address: agent.creatorAddress },
+        orderBy: { epoch: 'desc' },
+        take: 10,
+      }),
+    ]);
+
+    // Build overview
+    const totalCasts = castAggregates._count;
+    const totalLikes = castAggregates._sum.likes ?? 0;
+    const totalRecasts = castAggregates._sum.recasts ?? 0;
+    const totalReplies = castAggregates._sum.replies ?? 0;
+    const totalEngagement = totalLikes + totalRecasts + totalReplies;
+    const engagementRate = totalCasts > 0 ? totalEngagement / totalCasts : 0;
+
+    // Build time series from actual casts
     const periodCount = timeRange === '24h' ? 24 : timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
-    const timeSeries = Array.from({ length: periodCount }, (_, i) => ({
-      period: new Date(Date.now() - (periodCount - i) * (timeRange === '24h' ? 3_600_000 : 86_400_000)).toISOString(),
-      casts: 0,
-      likes: 0,
-      recasts: 0,
-      replies: 0,
-      engagementRate: 0,
+    const periodMs = timeRange === '24h' ? 3_600_000 : 86_400_000;
+    const now = Date.now();
+
+    const timeSeries = Array.from({ length: periodCount }, (_, i) => {
+      const periodStart = new Date(now - (periodCount - i) * periodMs);
+      const periodEnd = new Date(now - (periodCount - i - 1) * periodMs);
+
+      const periodCasts = casts.filter((c) => {
+        const t = c.publishedAt?.getTime() ?? c.createdAt.getTime();
+        return t >= periodStart.getTime() && t < periodEnd.getTime();
+      });
+
+      const pLikes = periodCasts.reduce((s, c) => s + c.likes, 0);
+      const pRecasts = periodCasts.reduce((s, c) => s + c.recasts, 0);
+      const pReplies = periodCasts.reduce((s, c) => s + c.replies, 0);
+      const pTotal = pLikes + pRecasts + pReplies;
+
+      return {
+        period: periodStart.toISOString(),
+        casts: periodCasts.length,
+        likes: pLikes,
+        recasts: pRecasts,
+        replies: pReplies,
+        engagementRate: periodCasts.length > 0 ? pTotal / periodCasts.length : 0,
+      };
+    });
+
+    // Top casts (already sorted by likes desc)
+    const topCasts = casts.slice(0, 10).map((c) => ({
+      hash: c.hash ?? '',
+      text: c.content.slice(0, 320),
+      likes: c.likes,
+      recasts: c.recasts,
+      replies: c.replies,
+      timestamp: (c.publishedAt ?? c.createdAt).toISOString(),
     }));
 
-    const analytics: ProAnalyticsData = {
+    // Active hours from casts
+    const hourBuckets = new Array(24).fill(0);
+    for (const c of casts) {
+      const hour = (c.publishedAt ?? c.createdAt).getUTCHours();
+      hourBuckets[hour] += c.likes + c.recasts + c.replies;
+    }
+
+    // Revenue
+    const totalClaimed = revenueClaims.reduce((s, r) => s + r.amount, 0n);
+    const epochBreakdown = ceosScores.map((s) => ({
+      epoch: s.epoch,
+      earned: '0',
+      creatorScore: s.totalScore,
+    }));
+
+    const analytics = {
       agentId,
       overview: {
-        totalCasts: 0,
-        totalLikes: 0,
-        totalRecasts: 0,
-        totalReplies: 0,
-        followerCount: 0,
-        engagementRate: 0,
-        creatorScore: 0,
+        totalCasts,
+        totalLikes,
+        totalRecasts,
+        totalReplies,
+        followerCount: latestMetrics?.followerGrowth ?? 0,
+        engagementRate: Math.round(engagementRate * 100) / 100,
+        creatorScore: ceosScores[0]?.totalScore ?? 0,
       },
       timeSeries,
-      topCasts: [],
+      topCasts,
       audienceInsights: {
         topFollowerLocations: [],
-        activeHours: Array.from({ length: 24 }, (_, hour) => ({
-          hour,
-          engagementScore: 0,
-        })),
+        activeHours: hourBuckets.map((score, hour) => ({ hour, engagementScore: score })),
         growthRate: {
-          daily: 0,
-          weekly: 0,
-          monthly: 0,
+          daily: latestMetrics?.followerGrowth ?? 0,
+          weekly: (latestMetrics?.followerGrowth ?? 0) * 7,
+          monthly: (latestMetrics?.followerGrowth ?? 0) * 30,
         },
       },
       revenueMetrics: {
-        totalEarned: '0',
+        totalEarned: totalClaimed.toString(),
         claimable: '0',
-        claimed: '0',
-        epochBreakdown: [],
+        claimed: totalClaimed.toString(),
+        epochBreakdown,
       },
     };
 
     return NextResponse.json(
-      {
-        success: true,
-        data: analytics,
-      },
+      { success: true, data: analytics },
       { status: 200 }
     );
   } catch (err) {
@@ -201,10 +244,7 @@ export async function GET(
     return NextResponse.json(
       {
         success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message,
-        },
+        error: { code: 'INTERNAL_ERROR', message },
       },
       { status: 500 }
     );

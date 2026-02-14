@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { prisma } from '@/lib/prisma';
+
 // ---------------------------------------------------------------------------
 // Query Schema
 // ---------------------------------------------------------------------------
@@ -9,24 +11,6 @@ const receiptsQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
 });
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface X402PaymentRecord {
-  id: string;
-  payer: string;
-  payee: string;
-  amount: string;
-  signature: string;
-  txHash: string | null;
-  chainId: number;
-  network: string;
-  resource: string;
-  verifiedAt: string;
-  createdAt: string;
-}
 
 // ---------------------------------------------------------------------------
 // Route Handler
@@ -91,29 +75,38 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     const { page, limit } = parsed.data;
-    // const skip = (page - 1) * limit; // TODO: use with Prisma query
+    const skip = (page - 1) * limit;
 
-    // TODO: Replace with actual Prisma query once schema is available
-    // const [receipts, total] = await Promise.all([
-    //   prisma.x402Payment.findMany({
-    //     where: { payer: payer.toLowerCase() },
-    //     orderBy: { createdAt: 'desc' },
-    //     skip,
-    //     take: limit,
-    //   }),
-    //   prisma.x402Payment.count({
-    //     where: { payer: payer.toLowerCase() },
-    //   }),
-    // ]);
+    const [receipts, total] = await Promise.all([
+      prisma.x402Payment.findMany({
+        where: { payer: payer.toLowerCase() },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.x402Payment.count({
+        where: { payer: payer.toLowerCase() },
+      }),
+    ]);
 
-    // Placeholder response until Prisma model is wired up
-    const receipts: X402PaymentRecord[] = [];
-    const total = 0;
+    const data = receipts.map((r) => ({
+      id: r.id,
+      payer: r.payer,
+      payee: r.payee ?? '',
+      amount: r.amount.toString(),
+      signature: r.signature ?? '',
+      txHash: r.txHash,
+      chainId: r.chainId ?? 8453,
+      network: r.network ?? 'base',
+      resource: r.endpoint,
+      verifiedAt: r.verifiedAt?.toISOString() ?? r.createdAt.toISOString(),
+      createdAt: r.createdAt.toISOString(),
+    }));
 
     return NextResponse.json(
       {
         success: true,
-        data: receipts,
+        data,
         pagination: {
           page,
           limit,

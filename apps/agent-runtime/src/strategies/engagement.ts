@@ -88,7 +88,7 @@ Output ONLY your reply text, nothing else.`;
     };
   }
 
-  shouldRecast(agent: AgentContext, cast: CastWithMetrics): boolean {
+  async shouldRecast(agent: AgentContext, cast: CastWithMetrics): Promise<boolean> {
     // Don't recast own content
     if (cast.authorFid === agent.fid) {
       return false;
@@ -100,27 +100,49 @@ Output ONLY your reply text, nothing else.`;
       return false;
     }
 
-    // Check relevance by persona keywords (simple heuristic)
-    const personaKeywords = agent.persona.toLowerCase().split(/\s+/);
-    const castText = cast.text.toLowerCase();
-    const relevanceScore = personaKeywords.filter((keyword) =>
-      keyword.length > 3 && castText.includes(keyword),
-    ).length;
+    // Use AI for semantic relevance scoring
+    try {
+      const result = await this.openrouter.generateText(
+        `You are evaluating whether a Farcaster cast is relevant to an AI agent's persona.
 
-    const isRelevant = relevanceScore >= 2;
+Agent persona: "${agent.persona}"
 
-    this.logger.debug(
-      {
-        agentId: agent.agentId,
-        castHash: cast.hash,
-        totalEngagement,
-        relevanceScore,
-        isRelevant,
-      },
-      'Recast evaluation',
-    );
+Cast text: "${cast.text}"
 
-    return isRelevant;
+Rate the relevance from 0 to 10 where 0 is completely irrelevant and 10 is perfectly aligned. Output ONLY a single number, nothing else.`,
+        { maxTokens: 5, temperature: 0 },
+      );
+
+      const score = parseInt(result.text.trim(), 10);
+      const isRelevant = !isNaN(score) && score >= 5;
+
+      this.logger.debug(
+        {
+          agentId: agent.agentId,
+          castHash: cast.hash,
+          totalEngagement,
+          relevanceScore: score,
+          isRelevant,
+        },
+        'Recast evaluation (AI-scored)',
+      );
+
+      return isRelevant;
+    } catch (error) {
+      // Fallback to keyword matching if AI scoring fails
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        'AI relevance scoring failed, falling back to keyword match',
+      );
+
+      const personaKeywords = agent.persona.toLowerCase().split(/\s+/);
+      const castText = cast.text.toLowerCase();
+      const keywordScore = personaKeywords.filter(
+        (keyword) => keyword.length > 3 && castText.includes(keyword),
+      ).length;
+
+      return keywordScore >= 2;
+    }
   }
 
   async generateReply(

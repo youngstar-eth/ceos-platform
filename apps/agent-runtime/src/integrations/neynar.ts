@@ -408,12 +408,19 @@ export class NeynarClient {
   startMentionPolling(
     fid: number,
     callback: (mentions: Mention[]) => void | Promise<void>,
+    options?: {
+      redis?: {
+        sadd: (key: string, ...members: string[]) => Promise<number>;
+        sismember: (key: string, member: string) => Promise<number>;
+      };
+    },
   ): void {
     if (this.mentionPollers.has(fid)) {
       this.logger.warn({ fid }, 'Mention polling already active');
       return;
     }
 
+    const repliedSetKey = `replied-mentions:${fid}`;
     let lastPollTime = new Date();
 
     const poll = async () => {
@@ -421,9 +428,39 @@ export class NeynarClient {
         const mentions = await this.getMentions(fid, lastPollTime);
         lastPollTime = new Date();
 
-        if (mentions.length > 0) {
-          this.logger.info({ fid, newMentions: mentions.length }, 'New mentions found');
-          await callback(mentions);
+        if (mentions.length === 0) return;
+
+        let filtered = mentions;
+
+        // Dedup: filter out already-replied mentions via Redis Set
+        if (options?.redis) {
+          const deduped: Mention[] = [];
+          for (const m of filtered) {
+            const alreadyReplied = await options.redis.sismember(repliedSetKey, m.castHash);
+            if (!alreadyReplied) {
+              deduped.push(m);
+            }
+          }
+          filtered = deduped;
+        }
+
+        // Spam filter: skip mentions from very new accounts (FID < 1000)
+        const MIN_AUTHOR_FID = 1000;
+        filtered = filtered.filter((m) => m.authorFid >= MIN_AUTHOR_FID);
+
+        if (filtered.length > 0) {
+          this.logger.info(
+            { fid, newMentions: filtered.length, rawTotal: mentions.length },
+            'New mentions found (after dedup/spam filter)',
+          );
+          await callback(filtered);
+
+          // Mark as replied in Redis for future dedup
+          if (options?.redis) {
+            for (const m of filtered) {
+              await options.redis.sadd(repliedSetKey, m.castHash);
+            }
+          }
         }
       } catch (error) {
         this.logger.error(

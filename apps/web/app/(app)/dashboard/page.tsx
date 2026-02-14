@@ -1,6 +1,8 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useAccount } from 'wagmi';
 import {
   Bot,
   DollarSign,
@@ -9,58 +11,63 @@ import {
   ArrowRight,
   Activity,
   Clock,
-  Terminal,
+  Loader2,
 } from 'lucide-react';
 import { StatCard } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useAgents } from '@/hooks/use-agent';
+import { useClaimableAmount, useOnChainCreatorScore } from '@/hooks/use-revenue';
 
-// Mock data for the dashboard
-const MOCK_STATS = {
-  totalAgents: 5,
-  activeAgents: 3,
-  totalRevenue: '1.24 ETH',
-  avgScore: 79,
-};
+interface ActivityItem {
+  id: string;
+  type: 'cast' | 'engagement' | 'revenue' | 'deploy';
+  agent: string;
+  action: string;
+  timestamp: string;
+}
 
-const RECENT_ACTIVITY = [
-  {
-    id: '1',
-    type: 'cast' as const,
-    agent: 'CryptoSage',
-    action: 'Published a cast about DeFi trends',
-    timestamp: '2 min ago',
-  },
-  {
-    id: '2',
-    type: 'engagement' as const,
-    agent: 'ArtBot',
-    action: 'Received 24 likes on image generation',
-    timestamp: '15 min ago',
-  },
-  {
-    id: '3',
-    type: 'revenue' as const,
-    agent: 'System',
-    action: 'Epoch 12 rewards distributed: 0.15 ETH',
-    timestamp: '1 hour ago',
-  },
-  {
-    id: '4',
-    type: 'deploy' as const,
-    agent: 'TechInsider',
-    action: 'Agent deployed successfully on Base',
-    timestamp: '3 hours ago',
-  },
-  {
-    id: '5',
-    type: 'cast' as const,
-    agent: 'NewsHound',
-    action: 'Created a thread about AI developments',
-    timestamp: '5 hours ago',
-  },
-];
+function useRecentActivity() {
+  const { address } = useAccount();
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!address) {
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    fetch('/api/dashboard/activity?limit=5', {
+      headers: { 'x-wallet-address': address },
+    })
+      .then((res) => res.json())
+      .then((json: { success: boolean; data: ActivityItem[] }) => {
+        if (json.success) {
+          setActivities(json.data);
+        }
+      })
+      .catch(() => {
+        // Silently fail — activity is non-critical
+      })
+      .finally(() => setIsLoading(false));
+  }, [address]);
+
+  return { activities, isLoading };
+}
+
+function formatTimeAgo(isoString: string): string {
+  const diff = Date.now() - new Date(isoString).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
 const activityIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   cast: Activity,
@@ -77,6 +84,24 @@ const activityColors: Record<string, string> = {
 };
 
 export default function DashboardPage() {
+  const { data: agentsResponse, isLoading: agentsLoading } = useAgents(1, 100);
+  const { data: claimableRaw } = useClaimableAmount();
+  const { data: scoreRaw } = useOnChainCreatorScore();
+  const { activities, isLoading: activityLoading } = useRecentActivity();
+
+  const agents = agentsResponse?.data ?? [];
+  const totalAgents = agents.length;
+  const activeAgents = agents.filter((a) => a.status === 'ACTIVE').length;
+
+  // Format claimable as ETH
+  const claimableWei = claimableRaw as bigint | undefined;
+  const claimableEth = claimableWei
+    ? (Number(claimableWei) / 1e18).toFixed(4)
+    : '0';
+
+  // Creator score from on-chain
+  const creatorScore = scoreRaw ? Number(scoreRaw) : 0;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -99,28 +124,25 @@ export default function DashboardPage() {
         <StatCard
           icon={Bot}
           label="Total Agents"
-          value={String(MOCK_STATS.totalAgents)}
-          description={`${MOCK_STATS.activeAgents} currently active`}
-          trend={{ value: 20, isPositive: true }}
+          value={agentsLoading ? '...' : String(totalAgents)}
+          description={`${activeAgents} currently active`}
         />
         <StatCard
           icon={DollarSign}
-          label="Total Revenue"
-          value={MOCK_STATS.totalRevenue}
-          description="Earned across all epochs"
-          trend={{ value: 12, isPositive: true }}
+          label="Claimable Revenue"
+          value={`${claimableEth} ETH`}
+          description="Available to claim"
         />
         <StatCard
           icon={TrendingUp}
-          label="Avg. Creator Score"
-          value={String(MOCK_STATS.avgScore)}
-          description="Out of 100"
-          trend={{ value: 5, isPositive: true }}
+          label="Creator Score"
+          value={creatorScore > 0 ? String(creatorScore) : '--'}
+          description="On-chain score"
         />
         <StatCard
           icon={Activity}
           label="Active Agents"
-          value={String(MOCK_STATS.activeAgents)}
+          value={agentsLoading ? '...' : String(activeAgents)}
           description="Publishing content"
         />
       </div>
@@ -136,34 +158,48 @@ export default function DashboardPage() {
             </Badge>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {RECENT_ACTIVITY.map((activity) => {
-                const Icon = activityIcons[activity.type] ?? Activity;
-                const colorClass = activityColors[activity.type] ?? 'text-muted-foreground bg-muted';
-                return (
-                  <div
-                    key={activity.id}
-                    className="flex items-start gap-3 pb-4 border-b border-neon-green/5 last:border-0 last:pb-0"
-                  >
-                    <div className={`h-8 w-8 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 ${colorClass}`}>
-                      <Icon className="h-4 w-4" />
+            {activityLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-neon-green/50" />
+              </div>
+            ) : activities.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <Clock className="h-8 w-8 text-muted-foreground/30 mb-2" />
+                <p className="text-sm text-muted-foreground">No recent activity</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">
+                  Deploy an agent to get started
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {activities.map((activity) => {
+                  const Icon = activityIcons[activity.type] ?? Activity;
+                  const colorClass = activityColors[activity.type] ?? 'text-muted-foreground bg-muted';
+                  return (
+                    <div
+                      key={activity.id}
+                      className="flex items-start gap-3 pb-4 border-b border-neon-green/5 last:border-0 last:pb-0"
+                    >
+                      <div className={`h-8 w-8 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 ${colorClass}`}>
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm">
+                          <span className="font-medium text-foreground">{activity.agent}</span>
+                          {' '}
+                          <span className="text-muted-foreground">
+                            {activity.action}
+                          </span>
+                        </p>
+                        <p className="text-xs text-muted-foreground/60 mt-0.5 font-pixel">
+                          {formatTimeAgo(activity.timestamp)}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm">
-                        <span className="font-medium text-foreground">{activity.agent}</span>
-                        {' '}
-                        <span className="text-muted-foreground">
-                          {activity.action}
-                        </span>
-                      </p>
-                      <p className="text-xs text-muted-foreground/60 mt-0.5 font-pixel">
-                        {activity.timestamp}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
 

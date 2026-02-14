@@ -29,6 +29,8 @@ interface AgentTrendContext {
 const CHECK_FREQUENCY_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_TRENDS = 10;
 const TREND_CONTENT_MAX_LENGTH = 320;
+const NEYNAR_API_BASE = 'https://api.neynar.com/v2/farcaster';
+const NEYNAR_API_KEY = process.env.NEYNAR_API_KEY ?? '';
 
 export class TrendingStrategy {
   private readonly openrouter: OpenRouterClient;
@@ -164,43 +166,132 @@ Output ONLY your post text, nothing else.`;
   }
 
   private async fetchTrendingTopics(): Promise<Trend[]> {
-    // Placeholder implementation
-    // In production, this would:
-    // 1. Call Neynar trending channels/casts API
-    // 2. Aggregate signals from high-engagement casts
-    // 3. Use AI to cluster topics
+    const trends: Trend[] = [];
 
-    // For now, use OpenRouter to simulate trend detection based on current events
-    try {
-      const result = await this.openrouter.generateText(
-        `List ${MAX_TRENDS} current trending topics in the crypto/web3/AI community. For each, provide a brief one-sentence description. Format as JSON array with objects containing "topic" and "description" fields. Output ONLY the JSON array, nothing else.`,
-        { maxTokens: 500, temperature: 0.5 },
-      );
+    // Step 1: Fetch real trending data from Neynar
+    if (NEYNAR_API_KEY) {
+      try {
+        // Fetch trending casts
+        const feedRes = await fetch(`${NEYNAR_API_BASE}/feed/trending?limit=25`, {
+          headers: { accept: 'application/json', api_key: NEYNAR_API_KEY },
+        });
 
-      const parsed: unknown = JSON.parse(result.text);
+        if (feedRes.ok) {
+          const feedData = (await feedRes.json()) as {
+            casts: Array<{
+              hash: string;
+              text: string;
+              reactions: { likes_count: number; recasts_count: number };
+            }>;
+          };
 
-      if (!Array.isArray(parsed)) {
-        throw new Error('Expected JSON array');
+          // Extract topic signals from high-engagement casts
+          const castTexts = feedData.casts
+            .map((c) => c.text.slice(0, 200))
+            .join('\n---\n');
+
+          if (castTexts.length > 0) {
+            // Use AI to cluster trending cast themes into distinct topics
+            const result = await this.openrouter.generateText(
+              `Analyze these trending Farcaster casts and extract ${MAX_TRENDS} distinct trending topics. For each topic, provide a brief one-sentence description.\n\nCasts:\n${castTexts}\n\nFormat as JSON array with objects containing "topic" and "description" fields. Output ONLY the JSON array, nothing else.`,
+              { maxTokens: 500, temperature: 0.3 },
+            );
+
+            const parsed: unknown = JSON.parse(result.text);
+            if (Array.isArray(parsed)) {
+              for (let i = 0; i < Math.min(parsed.length, MAX_TRENDS); i++) {
+                const item = parsed[i] as { topic?: string; description?: string };
+                if (item?.topic) {
+                  trends.push({
+                    id: `trend-${Date.now()}-${i}`,
+                    topic: String(item.topic),
+                    description: String(item.description ?? ''),
+                    score: MAX_TRENDS - i,
+                    detectedAt: new Date(),
+                    source: 'farcaster',
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        this.logger.warn(
+          { error: error instanceof Error ? error.message : String(error) },
+          'Failed to fetch Neynar trending feed',
+        );
       }
 
-      return (parsed as Array<{ topic: string; description: string }>)
-        .slice(0, MAX_TRENDS)
-        .map((item, index) => ({
-          id: `trend-${Date.now()}-${index}`,
-          topic: String(item.topic ?? ''),
-          description: String(item.description ?? ''),
-          score: MAX_TRENDS - index,
-          detectedAt: new Date(),
-          source: 'farcaster' as const,
-        }))
-        .filter((t) => t.topic.length > 0);
-    } catch (error) {
-      this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error) },
-        'Failed to fetch trending topics from AI, returning empty',
-      );
-      return [];
+      try {
+        // Fetch trending channels
+        const channelRes = await fetch(`${NEYNAR_API_BASE}/channel/trending?time_window=24h&limit=5`, {
+          headers: { accept: 'application/json', api_key: NEYNAR_API_KEY },
+        });
+
+        if (channelRes.ok) {
+          const channelData = (await channelRes.json()) as {
+            channels: Array<{
+              id: string;
+              name: string;
+              description: string;
+              follower_count: number;
+            }>;
+          };
+
+          for (const ch of channelData.channels) {
+            trends.push({
+              id: `channel-${ch.id}`,
+              topic: ch.name,
+              description: ch.description?.slice(0, 200) ?? `Trending channel: /${ch.id}`,
+              score: Math.min(ch.follower_count / 100, MAX_TRENDS),
+              detectedAt: new Date(),
+              source: 'farcaster',
+            });
+          }
+        }
+      } catch (error) {
+        this.logger.warn(
+          { error: error instanceof Error ? error.message : String(error) },
+          'Failed to fetch trending channels',
+        );
+      }
     }
+
+    // Fallback: if no Neynar data, use AI-generated topics
+    if (trends.length === 0) {
+      try {
+        const result = await this.openrouter.generateText(
+          `List ${MAX_TRENDS} current trending topics in the crypto/web3/AI community. For each, provide a brief one-sentence description. Format as JSON array with objects containing "topic" and "description" fields. Output ONLY the JSON array, nothing else.`,
+          { maxTokens: 500, temperature: 0.5 },
+        );
+
+        const parsed: unknown = JSON.parse(result.text);
+        if (Array.isArray(parsed)) {
+          for (let i = 0; i < Math.min(parsed.length, MAX_TRENDS); i++) {
+            const item = parsed[i] as { topic?: string; description?: string };
+            if (item?.topic) {
+              trends.push({
+                id: `ai-trend-${Date.now()}-${i}`,
+                topic: String(item.topic),
+                description: String(item.description ?? ''),
+                score: MAX_TRENDS - i,
+                detectedAt: new Date(),
+                source: 'external',
+              });
+            }
+          }
+        }
+      } catch (error) {
+        this.logger.warn(
+          { error: error instanceof Error ? error.message : String(error) },
+          'Failed to fetch trending topics from AI',
+        );
+      }
+    }
+
+    // Sort by score descending and limit
+    trends.sort((a, b) => b.score - a.score);
+    return trends.slice(0, MAX_TRENDS);
   }
 }
 

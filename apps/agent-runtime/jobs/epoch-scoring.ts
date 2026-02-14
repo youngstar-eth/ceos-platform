@@ -74,6 +74,7 @@ export async function processEpochScoring(epoch: number): Promise<{
     const castAgg = await prisma.cast.aggregate({
       where: { agentId: agent.id },
       _sum: { likes: true, recasts: true, replies: true },
+      _count: true,
     });
 
     // Fetch x402 revenue
@@ -81,6 +82,24 @@ export async function processEpochScoring(epoch: number): Promise<{
       where: { payer: agent.onChainAddress ?? undefined },
       _sum: { amount: true },
     });
+
+    // Fetch mention count from cast replies targeting this agent
+    const mentionCount = await prisma.cast.count({
+      where: { agentId: agent.id, type: "REPLY" },
+    });
+
+    // Calculate originality: ratio of unique content (ORIGINAL vs RECAST)
+    const originalCount = await prisma.cast.count({
+      where: { agentId: agent.id, type: "ORIGINAL" },
+    });
+    const totalCastCount = castAgg._count;
+    const originality = totalCastCount > 0
+      ? Math.round((originalCount / totalCastCount) * 100)
+      : 50;
+
+    // Compute error rate from metrics uptime
+    const uptimeVal = metrics?.uptime ?? 95;
+    const errorRate = Math.max(0, (100 - uptimeVal) / 100);
 
     agentData.push({
       agentId: agent.id,
@@ -92,16 +111,16 @@ export async function processEpochScoring(epoch: number): Promise<{
       likes: castAgg._sum.likes ?? 0,
       recasts: castAgg._sum.recasts ?? 0,
       replies: castAgg._sum.replies ?? 0,
-      mentions: 0,
+      mentions: mentionCount,
       x402Revenue: Number(x402Agg._sum.amount ?? 0),
       tips: 0,
       sponsorship: 0,
       aiQuality: metrics?.contentQuality ?? 50,
-      originality: 50,
-      sentiment: 50,
-      uptimePercent: metrics?.uptime ?? 95,
-      avgResponseTimeMs: 1000,
-      errorRate: 0.02,
+      originality,
+      sentiment: 50, // Sentiment analysis deferred to runtime content pipeline
+      uptimePercent: uptimeVal,
+      avgResponseTimeMs: 500,
+      errorRate,
     });
   }
 

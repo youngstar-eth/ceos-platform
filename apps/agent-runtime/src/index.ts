@@ -4,7 +4,8 @@ import { config, logger } from './config.js';
 import { ContentPipeline } from './core/content-pipeline.js';
 import { AgentScheduler } from './core/scheduler.js';
 import { AgentEngine } from './core/agent-engine.js';
-import { SkillExecutor } from './core/skill-executor.js';
+import { SkillExecutor, SkillType } from './core/skill-executor.js';
+import { TrendingStrategy } from './strategies/trending.js';
 import { OpenRouterClient } from './integrations/openrouter.js';
 import { FalAiClient } from './integrations/fal-ai.js';
 import { NeynarClient } from './integrations/neynar.js';
@@ -142,7 +143,52 @@ async function bootstrap(): Promise<RuntimeContext> {
   const engine = new AgentEngine(pipeline, scheduler);
   const skillExecutor = new SkillExecutor();
 
-  logger.info('Core modules initialized');
+  // Register built-in skills
+  skillExecutor.registerSkill({
+    id: 'content-generation',
+    name: 'Content Generation',
+    type: SkillType.CONTENT_GENERATION,
+    timeoutMs: 30_000,
+    execute: async (ctx) => {
+      const topic = (ctx.parameters['topic'] as string) ?? '';
+      const result = await pipeline.generateContent('original', topic, {
+        agentId: ctx.agentId,
+        persona: ctx.agentPersona,
+      });
+      return result;
+    },
+  });
+
+  skillExecutor.registerSkill({
+    id: 'trend-analysis',
+    name: 'Trend Analysis',
+    type: SkillType.ANALYTICS,
+    timeoutMs: 30_000,
+    execute: async () => {
+      const trending = new TrendingStrategy(openrouter);
+      const trends = await trending.detectTrends();
+      return { trends: trends.slice(0, 5) };
+    },
+  });
+
+  skillExecutor.registerSkill({
+    id: 'engagement-analysis',
+    name: 'Engagement Analysis',
+    type: SkillType.ENGAGEMENT,
+    timeoutMs: 15_000,
+    execute: async (ctx) => {
+      return {
+        agentId: ctx.agentId,
+        message: 'Engagement analysis skill executed',
+        parameters: ctx.parameters,
+      };
+    },
+  });
+
+  logger.info(
+    { skillCount: skillExecutor.getRegisteredSkills().length },
+    'Core modules initialized with built-in skills',
+  );
 
   // 5. Initialize BullMQ workers
   const contentWorker = createContentWorker(redis, config.OPENROUTER_API_KEY, config.FAL_KEY);

@@ -192,14 +192,15 @@ contract RevenuePoolTest is Test {
 
     /// @notice Test epoch advances with time
     function test_getCurrentEpoch_advances() public {
+        uint256 genesis = pool.genesisTimestamp();
         assertEq(pool.getCurrentEpoch(), 0);
 
-        // Advance 7 days
-        vm.warp(block.timestamp + 7 days);
+        // Advance 7 days from genesis
+        vm.warp(genesis + 7 days);
         assertEq(pool.getCurrentEpoch(), 1, "Should be epoch 1 after 7 days");
 
-        // Advance another 7 days
-        vm.warp(block.timestamp + 7 days);
+        // Advance 14 days from genesis
+        vm.warp(genesis + 14 days);
         assertEq(pool.getCurrentEpoch(), 2, "Should be epoch 2 after 14 days");
     }
 

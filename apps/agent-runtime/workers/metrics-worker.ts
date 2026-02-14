@@ -5,6 +5,7 @@ import { logger as rootLogger } from '../src/config.js';
 
 interface MetricsJobData {
   agentId: string;
+  fid: number;
   scheduledAt: string;
 }
 
@@ -27,6 +28,9 @@ interface AgentMetrics {
 
 const QUEUE_NAME = 'metrics-collection';
 const CONCURRENCY = 3;
+const NEYNAR_API_BASE = 'https://api.neynar.com/v2/farcaster';
+const NEYNAR_API_KEY = process.env.NEYNAR_API_KEY ?? '';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 
 export function createMetricsWorker(
   connection: Redis,
@@ -36,20 +40,18 @@ export function createMetricsWorker(
   const worker = new Worker<MetricsJobData, MetricsJobResult>(
     QUEUE_NAME,
     async (job: Job<MetricsJobData>): Promise<MetricsJobResult> => {
-      const { agentId } = job.data;
+      const { agentId, fid } = job.data;
 
-      logger.info({ jobId: job.id, agentId }, 'Collecting metrics');
+      logger.info({ jobId: job.id, agentId, fid }, 'Collecting metrics');
 
       await job.updateProgress(10);
 
-      // Collect engagement data
-      // In production: query Neynar API for cast metrics, follower counts, etc.
-      const metrics = await collectAgentMetrics(agentId, logger);
+      // Collect engagement data from Neynar
+      const metrics = await collectAgentMetrics(agentId, fid, logger);
 
       await job.updateProgress(60);
 
       // Store metrics via API call
-      // In production: POST to /api/agents/{agentId}/metrics
       await storeMetrics(agentId, metrics, logger);
 
       await job.updateProgress(90);
@@ -68,6 +70,7 @@ export function createMetricsWorker(
           agentId,
           engagementRate: metrics.engagementRate,
           totalCasts: metrics.totalCasts,
+          followerCount: metrics.followerCount,
         },
         'Metrics collection complete',
       );
@@ -112,14 +115,10 @@ export function createMetricsWorker(
 
 async function collectAgentMetrics(
   agentId: string,
+  fid: number,
   logger: pino.Logger,
 ): Promise<AgentMetrics> {
-  // Placeholder: In production, this queries the Neynar API
-  // and aggregates metrics from the database
-  logger.debug({ agentId }, 'Fetching agent metrics from external sources');
-
-  // Return placeholder structure - actual implementation would call Neynar
-  return {
+  const metrics: AgentMetrics = {
     totalCasts: 0,
     totalLikes: 0,
     totalRecasts: 0,
@@ -129,6 +128,104 @@ async function collectAgentMetrics(
     followerCount: 0,
     followingCount: 0,
   };
+
+  if (!NEYNAR_API_KEY || !fid) {
+    logger.warn({ agentId, fid }, 'No API key or FID, returning empty metrics');
+    return metrics;
+  }
+
+  try {
+    // Fetch user profile for follower/following counts
+    const userRes = await fetch(`${NEYNAR_API_BASE}/user/bulk?fids=${fid}`, {
+      headers: {
+        accept: 'application/json',
+        api_key: NEYNAR_API_KEY,
+      },
+    });
+
+    if (userRes.ok) {
+      const userData = (await userRes.json()) as {
+        users: Array<{
+          fid: number;
+          follower_count: number;
+          following_count: number;
+        }>;
+      };
+      const user = userData.users[0];
+      if (user) {
+        metrics.followerCount = user.follower_count;
+        metrics.followingCount = user.following_count;
+      }
+    }
+  } catch (err) {
+    logger.warn(
+      { agentId, error: err instanceof Error ? err.message : String(err) },
+      'Failed to fetch user profile',
+    );
+  }
+
+  try {
+    // Fetch recent casts for engagement metrics
+    const castsRes = await fetch(
+      `${NEYNAR_API_BASE}/feed/user/casts?fid=${fid}&limit=100`,
+      {
+        headers: {
+          accept: 'application/json',
+          api_key: NEYNAR_API_KEY,
+        },
+      },
+    );
+
+    if (castsRes.ok) {
+      const castsData = (await castsRes.json()) as {
+        casts: Array<{
+          hash: string;
+          reactions: { likes_count: number; recasts_count: number };
+          replies: { count: number };
+        }>;
+      };
+
+      metrics.totalCasts = castsData.casts.length;
+      for (const cast of castsData.casts) {
+        metrics.totalLikes += cast.reactions.likes_count;
+        metrics.totalRecasts += cast.reactions.recasts_count;
+        metrics.totalReplies += cast.replies.count;
+      }
+    }
+  } catch (err) {
+    logger.warn(
+      { agentId, error: err instanceof Error ? err.message : String(err) },
+      'Failed to fetch cast feed',
+    );
+  }
+
+  try {
+    // Fetch mention count
+    const mentionsRes = await fetch(
+      `${NEYNAR_API_BASE}/notifications?fid=${fid}&type=mentions`,
+      {
+        headers: {
+          accept: 'application/json',
+          api_key: NEYNAR_API_KEY,
+        },
+      },
+    );
+
+    if (mentionsRes.ok) {
+      const mentionsData = (await mentionsRes.json()) as {
+        notifications: Array<{ type: string }>;
+      };
+      metrics.totalMentions = mentionsData.notifications.length;
+    }
+  } catch (err) {
+    logger.warn(
+      { agentId, error: err instanceof Error ? err.message : String(err) },
+      'Failed to fetch mentions',
+    );
+  }
+
+  logger.debug({ agentId, fid, metrics }, 'Metrics collected from Neynar');
+  return metrics;
 }
 
 async function storeMetrics(
@@ -136,9 +233,25 @@ async function storeMetrics(
   metrics: AgentMetrics,
   logger: pino.Logger,
 ): Promise<void> {
-  // Placeholder: In production, this POSTs to the API layer
-  // which stores metrics in PostgreSQL via Prisma
-  logger.debug({ agentId, metrics }, 'Storing metrics');
+  try {
+    const res = await fetch(`${APP_URL}/api/agents/${agentId}/metrics`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(metrics),
+    });
+
+    if (!res.ok) {
+      logger.warn(
+        { agentId, status: res.status },
+        'Failed to store metrics via API',
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      { agentId, error: err instanceof Error ? err.message : String(err) },
+      'Failed to store metrics',
+    );
+  }
 }
 
 export type { MetricsJobData, MetricsJobResult, AgentMetrics };
