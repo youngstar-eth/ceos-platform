@@ -8,6 +8,7 @@ import {
   Rocket,
   DollarSign,
   Sparkles,
+  Trophy,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -31,6 +32,11 @@ const sidebarLinks = [
     href: '/dashboard/revenue',
     label: 'Revenue',
     icon: DollarSign,
+  },
+  {
+    href: '/dashboard/leaderboard',
+    label: 'Leaderboard',
+    icon: Trophy,
   },
   {
     href: '/dashboard/skills',

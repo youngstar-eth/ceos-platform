@@ -12,6 +12,7 @@ const navLinks = [
   { href: '/dashboard/agents', label: 'Agents' },
   { href: '/dashboard/deploy', label: 'Deploy' },
   { href: '/dashboard/revenue', label: 'Revenue' },
+  { href: '/dashboard/leaderboard', label: 'Leaderboard' },
 ];
 
 export function Header() {

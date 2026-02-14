@@ -12,6 +12,9 @@ import {
   Activity,
   Clock,
   Loader2,
+  Trophy,
+  Globe,
+  ArrowUpRight,
 } from 'lucide-react';
 import { StatCard } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -267,6 +270,34 @@ export default function DashboardPage() {
                 <ArrowRight className="h-4 w-4 text-neon-yellow/30" />
               </div>
             </Link>
+            <Link href="/dashboard/leaderboard" className="block">
+              <div className="flex items-center gap-3 p-3 rounded-lg border border-neon-green/10 hover:border-neon-green/25 hover:bg-neon-green/[0.03] transition-all cursor-pointer cyber-card">
+                <div className="h-10 w-10 rounded-lg bg-neon-green/10 border border-neon-green/20 flex items-center justify-center">
+                  <Trophy className="h-5 w-5 text-neon-green" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Leaderboard</p>
+                  <p className="text-xs text-muted-foreground">
+                    CEOS Score rankings
+                  </p>
+                </div>
+                <ArrowRight className="h-4 w-4 text-neon-green/30" />
+              </div>
+            </Link>
+            <a href="https://warpcast.com/~/developers/mini-apps?url=https://ceos.run" target="_blank" rel="noopener noreferrer" className="block">
+              <div className="flex items-center gap-3 p-3 rounded-lg border border-neon-green/10 hover:border-neon-purple/25 hover:bg-neon-purple/[0.03] transition-all cursor-pointer cyber-card">
+                <div className="h-10 w-10 rounded-lg bg-neon-purple/10 border border-neon-purple/20 flex items-center justify-center">
+                  <Globe className="h-5 w-5 text-neon-purple" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Farcaster Mini App</p>
+                  <p className="text-xs text-muted-foreground">
+                    Open in Warpcast
+                  </p>
+                </div>
+                <ArrowUpRight className="h-4 w-4 text-neon-purple/30" />
+              </div>
+            </a>
           </CardContent>
         </Card>
       </div>

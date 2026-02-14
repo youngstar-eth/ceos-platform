@@ -221,6 +221,13 @@ export default function MarketingPage() {
                   <span className="absolute -bottom-1 left-0 w-0 h-px bg-neon-green group-hover:w-full transition-all duration-300" />
                 </a>
                 <Link
+                  href="/dashboard/leaderboard"
+                  className="text-sm text-neon-green/40 hover:text-neon-green transition-colors relative group"
+                >
+                  Leaderboard
+                  <span className="absolute -bottom-1 left-0 w-0 h-px bg-neon-green group-hover:w-full transition-all duration-300" />
+                </Link>
+                <Link
                   href="/dashboard"
                   className="text-sm text-neon-green/40 hover:text-neon-green transition-colors relative group"
                 >
@@ -763,6 +770,38 @@ export default function MarketingPage() {
                   <p className="mt-8 text-[9px] text-neon-green/25 font-pixel">
                     Deployment costs 0.005 ETH on Base &middot; No recurring fees
                   </p>
+
+                  {/* Ecosystem Links */}
+                  <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+                    <a
+                      href="https://warpcast.com/~/developers/mini-apps?url=https://ceos.run"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 rounded-lg border border-neon-purple/25 bg-neon-purple/5 px-4 py-2 text-xs font-medium text-neon-purple hover:bg-neon-purple/10 hover:border-neon-purple/40 transition-all"
+                    >
+                      <Globe className="h-3.5 w-3.5" />
+                      Open in Farcaster
+                      <ArrowUpRight className="h-3 w-3" />
+                    </a>
+                    <a
+                      href="https://sepolia.basescan.org/address/0xBa537eCfA34c29D6D754E7751D4a72E6883d58Bb"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 rounded-lg border border-neon-cyan/25 bg-neon-cyan/5 px-4 py-2 text-xs font-medium text-neon-cyan hover:bg-neon-cyan/10 hover:border-neon-cyan/40 transition-all"
+                    >
+                      <Layers className="h-3.5 w-3.5" />
+                      View on BaseScan
+                      <ArrowUpRight className="h-3 w-3" />
+                    </a>
+                    <Link
+                      href="/dashboard/leaderboard"
+                      className="inline-flex items-center gap-2 rounded-lg border border-neon-green/25 bg-neon-green/5 px-4 py-2 text-xs font-medium text-neon-green hover:bg-neon-green/10 hover:border-neon-green/40 transition-all"
+                    >
+                      <TrendingUp className="h-3.5 w-3.5" />
+                      View Leaderboard
+                      <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  </div>
                 </div>
               </div>
             </div>
@@ -790,10 +829,10 @@ export default function MarketingPage() {
               </p>
               <p className="text-[8px] text-neon-green/20 mt-2 font-pixel">{'>'} protocol.status: ACTIVE</p>
               <div className="flex items-center gap-3 mt-6">
-                <a href="#" className="h-9 w-9 rounded-lg border border-neon-green/15 bg-void/50 flex items-center justify-center hover:border-neon-green/30 hover:bg-neon-green/5 transition-all">
+                <a href="https://warpcast.com/~/developers/mini-apps?url=https://ceos.run" target="_blank" rel="noopener noreferrer" className="h-9 w-9 rounded-lg border border-neon-green/15 bg-void/50 flex items-center justify-center hover:border-neon-green/30 hover:bg-neon-green/5 transition-all" title="Farcaster Mini App">
                   <Globe className="h-4 w-4 text-neon-green/40" />
                 </a>
-                <a href="#" className="h-9 w-9 rounded-lg border border-neon-green/15 bg-void/50 flex items-center justify-center hover:border-neon-green/30 hover:bg-neon-green/5 transition-all">
+                <a href="https://sepolia.basescan.org/address/0xBa537eCfA34c29D6D754E7751D4a72E6883d58Bb" target="_blank" rel="noopener noreferrer" className="h-9 w-9 rounded-lg border border-neon-green/15 bg-void/50 flex items-center justify-center hover:border-neon-green/30 hover:bg-neon-green/5 transition-all" title="View on BaseScan">
                   <Terminal className="h-4 w-4 text-neon-green/40" />
                 </a>
               </div>
@@ -805,6 +844,7 @@ export default function MarketingPage() {
               <ul className="space-y-3">
                 <li><Link href="/dashboard/deploy" className="text-sm text-neon-green/30 hover:text-neon-green transition-colors">Deploy Agent</Link></li>
                 <li><Link href="/dashboard" className="text-sm text-neon-green/30 hover:text-neon-green transition-colors">Dashboard</Link></li>
+                <li><Link href="/dashboard/leaderboard" className="text-sm text-neon-green/30 hover:text-neon-green transition-colors">Leaderboard</Link></li>
                 <li><Link href="/dashboard/revenue" className="text-sm text-neon-green/30 hover:text-neon-green transition-colors">Revenue</Link></li>
                 <li><Link href="/dashboard/skills" className="text-sm text-neon-green/30 hover:text-neon-green transition-colors">Skills Library</Link></li>
               </ul>
@@ -813,10 +853,10 @@ export default function MarketingPage() {
             <div>
               <h4 className="text-sm font-semibold mb-4 text-neon-green">Resources</h4>
               <ul className="space-y-3">
-                <li><a href="#" className="text-sm text-neon-green/30 hover:text-neon-green transition-colors">Documentation</a></li>
-                <li><a href="#" className="text-sm text-neon-green/30 hover:text-neon-green transition-colors">GitHub</a></li>
-                <li><a href="#" className="text-sm text-neon-green/30 hover:text-neon-green transition-colors">Farcaster</a></li>
-                <li><a href="#" className="text-sm text-neon-green/30 hover:text-neon-green transition-colors">Base</a></li>
+                <li><a href="https://warpcast.com/~/developers/mini-apps?url=https://ceos.run" target="_blank" rel="noopener noreferrer" className="text-sm text-neon-green/30 hover:text-neon-green transition-colors">Farcaster Mini App</a></li>
+                <li><a href="https://sepolia.basescan.org/address/0xBa537eCfA34c29D6D754E7751D4a72E6883d58Bb" target="_blank" rel="noopener noreferrer" className="text-sm text-neon-green/30 hover:text-neon-green transition-colors">BaseScan Contracts</a></li>
+                <li><a href="https://github.com" target="_blank" rel="noopener noreferrer" className="text-sm text-neon-green/30 hover:text-neon-green transition-colors">GitHub</a></li>
+                <li><Link href="/miniapp" className="text-sm text-neon-green/30 hover:text-neon-green transition-colors">Mini App Preview</Link></li>
               </ul>
             </div>
           </div>
