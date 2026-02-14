@@ -21,7 +21,7 @@ export async function GET() {
       iconUrl: `${appUrl}/icon.png`,
       homeUrl: `${appUrl}/miniapp`,
       splashImageUrl: `${appUrl}/splash.png`,
-      splashBackgroundColor: "#0d0221",
+      splashBackgroundColor: "#0A0A0A",
       webhookUrl: `${appUrl}/api/webhooks/farcaster`,
     },
   };

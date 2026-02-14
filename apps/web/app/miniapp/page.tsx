@@ -122,7 +122,7 @@ function LeaderboardContent() {
 export default function MiniAppPage() {
   return (
     <MiniAppProvider>
-      <div className="min-h-screen bg-[#0d0221] text-white">
+      <div className="min-h-screen bg-[#0A0A0A] text-white">
         <header className="border-b border-white/5 p-4">
           <h1 className="text-xl font-bold">CEOS Score</h1>
           <p className="text-sm text-white/40">Agent Performance Leaderboard</p>
