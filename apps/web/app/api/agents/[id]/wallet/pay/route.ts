@@ -57,7 +57,7 @@ export const POST = withRateLimit(RATE_LIMITS.api, async (
     const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const recentTxCount = await prisma.walletTransaction.count({
       where: {
-        agentId: id,
+        agentId: agent.id,
         createdAt: { gte: dayAgo },
       },
     });
@@ -73,7 +73,7 @@ export const POST = withRateLimit(RATE_LIMITS.api, async (
     // Record the payment transaction
     await prisma.walletTransaction.create({
       data: {
-        agentId: id,
+        agent: { connect: { id: agent.id } },
         type: 'x402_outbound',
         amount: parseFloat(amount),
         currency: 'USDC',

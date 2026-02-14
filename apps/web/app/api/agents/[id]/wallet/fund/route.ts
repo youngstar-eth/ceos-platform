@@ -50,7 +50,7 @@ export const POST = withRateLimit(RATE_LIMITS.deploy, async (
     // Record the fund transaction
     await prisma.walletTransaction.create({
       data: {
-        agentId: id,
+        agent: { connect: { id: agent.id } },
         type: 'fund',
         amount: 10,
         currency: 'USDC',
