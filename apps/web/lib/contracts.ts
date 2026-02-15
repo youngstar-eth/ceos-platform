@@ -1,14 +1,14 @@
 import { type Address } from 'viem';
 
-// Contract addresses from environment variables
+// Contract addresses from environment variables (trimmed to prevent whitespace issues)
 export const CONTRACT_ADDRESSES = {
-  agentFactory: (process.env.NEXT_PUBLIC_FACTORY_ADDRESS ?? '0x') as Address,
-  agentRegistry: (process.env.NEXT_PUBLIC_REGISTRY_ADDRESS ?? '0x') as Address,
-  revenuePool: (process.env.NEXT_PUBLIC_REVENUE_POOL_ADDRESS ?? '0x') as Address,
-  creatorScore: (process.env.NEXT_PUBLIC_CREATOR_SCORE_ADDRESS ?? '0x') as Address,
-  erc8004Registry: (process.env.NEXT_PUBLIC_ERC8004_REGISTRY_ADDRESS ?? '0x') as Address,
-  x402Gate: (process.env.NEXT_PUBLIC_X402_GATE_ADDRESS ?? '0x') as Address,
-  usdc: (process.env.NEXT_PUBLIC_USDC_CONTRACT ?? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913') as Address,
+  agentFactory: (process.env.NEXT_PUBLIC_FACTORY_ADDRESS?.trim() ?? '0x') as Address,
+  agentRegistry: (process.env.NEXT_PUBLIC_REGISTRY_ADDRESS?.trim() ?? '0x') as Address,
+  revenuePool: (process.env.NEXT_PUBLIC_REVENUE_POOL_ADDRESS?.trim() ?? '0x') as Address,
+  creatorScore: (process.env.NEXT_PUBLIC_CREATOR_SCORE_ADDRESS?.trim() ?? '0x') as Address,
+  erc8004Registry: (process.env.NEXT_PUBLIC_ERC8004_REGISTRY_ADDRESS?.trim() ?? '0x') as Address,
+  x402Gate: (process.env.NEXT_PUBLIC_X402_GATE_ADDRESS?.trim() ?? '0x') as Address,
+  usdc: (process.env.NEXT_PUBLIC_USDC_CONTRACT?.trim() ?? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913') as Address,
 } as const;
 
 // ABIs generated from contracts/out/ (Foundry compiled output)
