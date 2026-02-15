@@ -25,7 +25,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { StatCard } from '@/components/shared/stat-card';
 import { useAgent } from '@/hooks/use-agent';
-import { cn } from '@/lib/utils';
+import { cn, getBaseScanUrl } from '@/lib/utils';
 
 const statusColors: Record<string, string> = {
   ACTIVE: 'bg-green-500/10 text-green-500 border-green-500/20',
@@ -324,7 +324,7 @@ export default function AgentDetailPage() {
                   <p className="text-xs text-muted-foreground">On-Chain</p>
                   {agent.onChainId ? (
                     <a
-                      href={`https://sepolia.basescan.org/address/${String(agentRecord.onChainAddress ?? '')}`}
+                      href={`${getBaseScanUrl()}/address/${String(agentRecord.onChainAddress ?? '')}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-sm font-semibold text-primary hover:underline flex items-center gap-1"

@@ -3,7 +3,7 @@
 import { Loader2, CheckCircle2, XCircle, Clock, Wallet } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { type DeployStatus } from '@/hooks/use-deploy';
-import { cn, formatAddress } from '@/lib/utils';
+import { cn, formatAddress, getBaseScanUrl } from '@/lib/utils';
 
 interface TransactionStatusProps {
   status: DeployStatus;
@@ -101,7 +101,7 @@ export function TransactionStatus({
           </p>
           {txHash && (
             <a
-              href={`https://basescan.org/tx/${txHash}`}
+              href={`${getBaseScanUrl()}/tx/${txHash}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-primary hover:underline mt-1 inline-block"

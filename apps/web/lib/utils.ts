@@ -22,3 +22,14 @@ export function formatCompactNumber(value: number): string {
   }).format(value);
 }
 
+/**
+ * Get the correct BaseScan URL based on the current chain ID.
+ * Returns sepolia.basescan.org for testnet, basescan.org for mainnet.
+ */
+export function getBaseScanUrl(): string {
+  const chainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? '84532');
+  return chainId === 8453
+    ? 'https://basescan.org'
+    : 'https://sepolia.basescan.org';
+}
+

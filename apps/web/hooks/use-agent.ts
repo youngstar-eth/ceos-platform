@@ -57,8 +57,14 @@ interface UpdateAgentInput {
   strategy?: Agent['strategy'];
 }
 
-async function fetchAgents(page = 1, limit = 10): Promise<AgentsResponse> {
-  const res = await fetch(`/api/agents?page=${page}&limit=${limit}`);
+async function fetchAgents(page = 1, limit = 10, creator?: string): Promise<AgentsResponse> {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  });
+  if (creator) params.set('creator', creator);
+
+  const res = await fetch(`/api/agents?${params.toString()}`);
   if (!res.ok) {
     throw new Error('Failed to fetch agents');
   }
@@ -102,6 +108,14 @@ export function useAgents(page = 1, limit = 10) {
   return useQuery({
     queryKey: ['agents', page, limit],
     queryFn: () => fetchAgents(page, limit),
+  });
+}
+
+export function useMyAgents(creator: string | undefined, page = 1, limit = 50) {
+  return useQuery({
+    queryKey: ['my-agents', creator, page, limit],
+    queryFn: () => fetchAgents(page, limit, creator),
+    enabled: !!creator,
   });
 }
 

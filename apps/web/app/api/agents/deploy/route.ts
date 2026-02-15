@@ -387,8 +387,8 @@ async function updateFarcasterProfile(
 }
 
 /**
- * Production mode: verify on-chain tx hash, transition to DEPLOYING.
- * The agent runtime will handle activation after on-chain confirmation.
+ * Production mode: verify on-chain tx hash, create Farcaster account, and activate.
+ * This is called after the on-chain transaction is confirmed by the frontend.
  */
 async function handleProductionDeployment(body: unknown, address: string) {
   const data = deployAgentSchema.parse(body);
@@ -405,31 +405,159 @@ async function handleProductionDeployment(body: unknown, address: string) {
     throw Errors.forbidden("Only the creator can deploy this agent");
   }
 
-  if (agent.status !== "PENDING") {
+  // Allow PENDING (first call) or DEPLOYING (retry) status
+  if (agent.status !== "PENDING" && agent.status !== "DEPLOYING") {
     throw Errors.conflict(
       `Agent cannot be deployed from status "${agent.status}"`,
+    );
+  }
+
+  // Generate username from agent name
+  const baseUsername = agent.name
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 12);
+  const username = `${baseUsername}-${Math.floor(Math.random() * 9000 + 1000)}`;
+
+  const persona =
+    typeof agent.persona === "string"
+      ? agent.persona
+      : ((agent.persona as Record<string, unknown>)?.description as string) ??
+        "";
+
+  // Generate profile images (non-blocking on failure)
+  let generatedPfpUrl: string | null = null;
+  let generatedBannerUrl: string | null = null;
+  try {
+    const personaObj =
+      typeof agent.persona === "object" && agent.persona !== null
+        ? (agent.persona as Record<string, unknown>)
+        : {};
+
+    const profileImages = await generateAgentProfileImages({
+      name: agent.name,
+      description: agent.description,
+      persona: personaObj,
+      skills: agent.skills,
+    });
+
+    generatedPfpUrl = profileImages.pfpUrl;
+    generatedBannerUrl = profileImages.bannerUrl;
+
+    logger.info(
+      { hasPfp: !!generatedPfpUrl, hasBanner: !!generatedBannerUrl },
+      "Profile images generated (production)",
+    );
+  } catch (err) {
+    logger.warn(
+      { error: err instanceof Error ? err.message : String(err) },
+      "Profile image generation failed in production, continuing without images",
+    );
+  }
+
+  // Create Farcaster account
+  let fid: number;
+  let signerUuid: string;
+  let custodyAddress: string;
+
+  if (!NEYNAR_WALLET_ID) {
+    logger.warn("NEYNAR_WALLET_ID not set, falling back to demo signer (production)");
+    fid = 800000 + Math.floor(Math.random() * 100000);
+    signerUuid = `demo-signer-${crypto.randomUUID()}`;
+    custodyAddress = `0x${Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join("")}`;
+  } else {
+    try {
+      const account = await createFarcasterAccount({
+        walletId: NEYNAR_WALLET_ID,
+        username,
+        displayName: agent.name,
+        bio: persona.slice(0, 160) || `AI agent on Farcaster | Powered by ceos.run`,
+        pfpUrl: generatedPfpUrl ?? undefined,
+        agentId: agent.id,
+      });
+
+      fid = account.fid;
+      signerUuid = account.signerUuid;
+      custodyAddress = account.custodyAddress;
+
+      logger.info(
+        { agentId: agent.id, fid, username, signerUuid: signerUuid.slice(0, 8) + "..." },
+        "Farcaster account created for agent (production)",
+      );
+    } catch (err) {
+      logger.error(
+        { error: err instanceof Error ? err.message : String(err) },
+        "Failed to create Farcaster account (production)",
+      );
+
+      fid = 800000 + Math.floor(Math.random() * 100000);
+      signerUuid = `demo-signer-${crypto.randomUUID()}`;
+      custodyAddress = `0x${Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join("")}`;
+    }
+  }
+
+  // Set banner on Farcaster profile
+  if (generatedBannerUrl && signerUuid && !signerUuid.startsWith("demo-signer-")) {
+    try {
+      await updateFarcasterProfile(signerUuid, { pfpUrl: generatedPfpUrl, bannerUrl: generatedBannerUrl });
+      logger.info("Banner image set on Farcaster profile (production)");
+    } catch (err) {
+      logger.warn(
+        { error: err instanceof Error ? err.message : String(err) },
+        "Failed to set banner image in production, continuing",
+      );
+    }
+  }
+
+  // Awal Wallet Provisioning
+  let walletResult: { walletId: string; address: string; email: string } | null = null;
+  try {
+    const { provisionAgentWallet } = await import('@/lib/awal');
+    walletResult = await provisionAgentWallet(data.agentId, agent.name);
+    logger.info({ agentId: data.agentId, walletAddress: walletResult.address }, 'Awal wallet provisioned (production)');
+  } catch (walletError) {
+    logger.warn(
+      { agentId: data.agentId, error: walletError instanceof Error ? walletError.message : String(walletError) },
+      'Awal wallet provisioning failed in production — agent will operate without autonomous wallet',
     );
   }
 
   const updated = await prisma.agent.update({
     where: { id: data.agentId },
     data: {
-      status: "DEPLOYING",
-      onChainAddress: data.txHash,
+      status: "ACTIVE",
+      fid,
+      onChainAddress: data.txHash ?? custodyAddress,
+      signerUuid,
+      ...(generatedPfpUrl && { pfpUrl: generatedPfpUrl }),
+      ...(generatedBannerUrl && { bannerUrl: generatedBannerUrl }),
+      walletAddress: walletResult?.address ?? null,
+      walletEmail: walletResult?.email ?? null,
+      walletSessionLimit: Number(process.env.AWAL_DEFAULT_SESSION_LIMIT ?? 50),
+      walletTxLimit: Number(process.env.AWAL_DEFAULT_TX_LIMIT ?? 10),
     },
   });
 
+  const isRealAccount = !signerUuid.startsWith("demo-signer-");
+
   logger.info(
-    { agentId: data.agentId, txHash: data.txHash, creator: address },
-    "Agent deployment initiated",
+    { agentId: data.agentId, fid, txHash: data.txHash, creator: address, realAccount: isRealAccount },
+    "Agent deployed in PRODUCTION mode",
   );
 
   return successResponse(
     {
       agent: updated,
       mode: "production",
-      message: "Deployment initiated. Agent will be activated once on-chain confirmation is received.",
+      farcasterAccount: isRealAccount
+        ? { fid, username, custodyAddress }
+        : null,
+      message: isRealAccount
+        ? `Agent deployed on-chain and Farcaster account @${username} created (FID: ${fid})`
+        : "Agent deployed on-chain. Fund the Neynar wallet to enable real Farcaster accounts.",
     },
-    202,
+    201,
   );
 }

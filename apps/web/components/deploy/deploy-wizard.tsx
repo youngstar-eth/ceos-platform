@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ArrowRight, Rocket, Check } from 'lucide-react';
 import { useAccount, useSignMessage } from 'wagmi';
@@ -145,11 +145,98 @@ export function DeployWizard() {
   };
 
   const handleOnChainDeploy = async () => {
-    await deploy({
-      name: config.persona.name,
-      metadataUri: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://ceos.run'}/api/metadata/${encodeURIComponent(config.persona.name)}`,
-    });
+    if (!address) return;
+
+    try {
+      // Step 1: Create agent config in database first (same as demo mode)
+      const message = `deploy:${config.persona.name}:${Date.now()}`;
+      const signature = 'onchain-mode-signature';
+
+      const createRes = await fetch('/api/agents', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-wallet-address': address,
+          'x-wallet-signature': signature,
+          'x-wallet-message': message,
+        },
+        body: JSON.stringify({
+          name: config.persona.name,
+          description: config.persona.description,
+          persona: {
+            tone: config.persona.personality || 'informative',
+            style: config.persona.traits.join(', ') || 'engaging',
+            topics: config.skills.length > 0 ? config.skills : ['general'],
+            language: 'en',
+            customPrompt: config.persona.personality,
+          },
+          skills: config.skills,
+          strategy: {
+            postingFrequency: config.strategy === 'media-heavy' ? 8 : config.strategy === 'text-heavy' ? 4 : 6,
+            engagementMode: 'active' as const,
+            trendTracking: true,
+            replyProbability: 0.3,
+            mediaGeneration: config.strategy !== 'text-heavy',
+          },
+        }),
+      });
+
+      if (!createRes.ok) {
+        const err = await createRes.json();
+        throw new Error(err.error?.message ?? 'Failed to create agent');
+      }
+
+      const { data: agent } = await createRes.json();
+      setDeployedAgentId(agent.id);
+
+      // Step 2: Initiate blockchain transaction
+      await deploy({
+        name: config.persona.name,
+        metadataUri: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://ceos.run'}/api/metadata/${encodeURIComponent(config.persona.name)}`,
+      });
+    } catch (err) {
+      // If DB create fails, the deploy hook error handling will show the error
+      console.error('On-chain deploy preparation failed:', err);
+    }
   };
+
+  // When on-chain tx is confirmed, notify the backend to activate the agent
+  const hasNotifiedBackend = useRef(false);
+  useEffect(() => {
+    if (
+      !DEMO_MODE &&
+      onChainStatus === 'confirmed' &&
+      txHash &&
+      deployedAgentId &&
+      !hasNotifiedBackend.current
+    ) {
+      hasNotifiedBackend.current = true;
+
+      const notifyBackend = async () => {
+        try {
+          const message = `deploy-confirm:${deployedAgentId}:${Date.now()}`;
+          const res = await fetch('/api/agents/deploy', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-wallet-address': address ?? '',
+              'x-wallet-signature': 'onchain-confirmed',
+              'x-wallet-message': message,
+            },
+            body: JSON.stringify({ agentId: deployedAgentId, txHash }),
+          });
+
+          if (!res.ok) {
+            console.error('Failed to notify backend of deployment:', await res.text());
+          }
+        } catch (err) {
+          console.error('Backend notification failed:', err);
+        }
+      };
+
+      void notifyBackend();
+    }
+  }, [onChainStatus, txHash, deployedAgentId, address]);
 
   const handleDeploy = DEMO_MODE ? handleDemoDeploy : handleOnChainDeploy;
 
@@ -217,12 +304,20 @@ export function DeployWizard() {
           {status === 'confirmed' && deployedAgentId && (
             <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-4 text-center">
               <p className="text-green-400 font-medium mb-2">Agent deployed successfully!</p>
-              <Button
-                variant="outline"
-                onClick={() => router.push(`/dashboard/agents/${deployedAgentId}`)}
-              >
-                View Agent Dashboard
-              </Button>
+              <div className="flex items-center justify-center gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => router.push(`/dashboard/agents/${deployedAgentId}`)}
+                >
+                  View Agent Dashboard
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => router.push('/dashboard/my-agents')}
+                >
+                  My Agents
+                </Button>
+              </div>
             </div>
           )}
         </div>

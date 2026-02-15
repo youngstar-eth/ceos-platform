@@ -9,6 +9,7 @@ import {
   DollarSign,
   Sparkles,
   Trophy,
+  User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -17,6 +18,11 @@ const sidebarLinks = [
     href: '/dashboard',
     label: 'Dashboard',
     icon: LayoutDashboard,
+  },
+  {
+    href: '/dashboard/my-agents',
+    label: 'My Agents',
+    icon: User,
   },
   {
     href: '/dashboard/agents',
