@@ -756,6 +756,159 @@
   opacity: 1;
 }
 
+/* ===== EXECUTIVE GRID DESIGN SYSTEM ===== */
+
+/* --- Executive Void Background --- */
+.exec-void {
+  background-color: #050505;
+}
+
+/* --- Executive Grid Overlay (subtle, drifting) --- */
+.exec-grid-overlay {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  animation: exec-grid-drift 20s linear infinite;
+  pointer-events: none;
+}
+
+/* --- Executive Scanline --- */
+.exec-scanline {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.exec-scanline::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.15), transparent);
+  animation: exec-scan 6s linear infinite;
+}
+
+/* --- Executive Glow Text (numbers only) --- */
+.exec-glow-cyan {
+  text-shadow:
+    0 0 6px rgba(0, 240, 255, 0.6),
+    0 0 12px rgba(0, 240, 255, 0.3);
+}
+
+.exec-glow-green {
+  text-shadow:
+    0 0 6px rgba(0, 255, 65, 0.6),
+    0 0 12px rgba(0, 255, 65, 0.3);
+}
+
+.exec-glow-purple {
+  text-shadow:
+    0 0 6px rgba(112, 0, 255, 0.6),
+    0 0 12px rgba(112, 0, 255, 0.3);
+}
+
+/* --- Executive Glass Card --- */
+.exec-glass {
+  background: rgba(10, 10, 10, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  position: relative;
+}
+
+.exec-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.015;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* --- Executive Card Hover Scanline --- */
+.exec-card-hover {
+  position: relative;
+  overflow: hidden;
+}
+
+.exec-card-hover::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.4), transparent);
+  top: -100%;
+  transition: none;
+  pointer-events: none;
+}
+
+.exec-card-hover:hover::after {
+  animation: exec-scan 2s linear;
+}
+
+/* --- Executive Terminal --- */
+.exec-terminal {
+  background: rgba(5, 5, 5, 0.95);
+  border: 1px solid rgba(0, 240, 255, 0.12);
+  font-family: var(--font-pixel), 'Courier New', monospace;
+}
+
+.exec-terminal-header {
+  background: rgba(0, 240, 255, 0.04);
+  border-bottom: 1px solid rgba(0, 240, 255, 0.1);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* --- Executive Ticker Bar --- */
+.exec-ticker-bar {
+  border-top: 1px solid rgba(0, 240, 255, 0.08);
+  border-bottom: 1px solid rgba(0, 240, 255, 0.08);
+  background: rgba(5, 5, 5, 0.9);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* --- Executive Glitch (on hover only, clean) --- */
+.exec-glitch-hover {
+  position: relative;
+}
+
+.exec-glitch-hover:hover {
+  animation: exec-glitch-flash 0.3s ease;
+}
+
+@keyframes exec-glitch-flash {
+  0%, 100% { text-shadow: none; }
+  25% { text-shadow: -2px 0 rgba(0, 240, 255, 0.5), 2px 0 rgba(112, 0, 255, 0.5); }
+  50% { text-shadow: 1px 0 rgba(0, 240, 255, 0.3), -1px 0 rgba(112, 0, 255, 0.3); }
+  75% { text-shadow: -1px 0 rgba(0, 240, 255, 0.4), 1px 0 rgba(112, 0, 255, 0.4); }
+}
+
+/* --- Executive 3D Card Perspective --- */
+.exec-perspective-card {
+  perspective: 1200px;
+}
+
+.exec-perspective-card-inner {
+  transform: rotateY(-8deg) rotateX(4deg);
+  transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.exec-perspective-card:hover .exec-perspective-card-inner {
+  transform: rotateY(-3deg) rotateX(2deg);
+}
+
 /* --- Reduced Motion --- */
 @media (prefers-reduced-motion: reduce) {
   .glitch-text::before,

@@ -77,7 +77,8 @@ const config: Config = {
           border: '#112240',
           glow: '#00ff9d',
         },
-        void: '#050a14',
+        void: '#050505',
+        'void-legacy': '#050a14',
         'grid-dark': '#0a1628',
         chrome: {
           light: '#e0f0e8',
@@ -98,6 +99,15 @@ const config: Config = {
           pink: '#ff0066',
           purple: '#7b2cbf',
           deep: '#1a0044',
+        },
+        exec: {
+          cyan: '#00F0FF',
+          purple: '#7000FF',
+          green: '#00FF41',
+          dark: '#050505',
+          surface: '#0A0A0A',
+          border: '#1a1a1a',
+          muted: '#666666',
         },
       },
       borderRadius: {
@@ -204,6 +214,29 @@ const config: Config = {
           '0%': { transform: 'translateX(-100%)' },
           '100%': { transform: 'translateX(200%)' },
         },
+        'exec-scan': {
+          '0%': { transform: 'translateY(-100%)' },
+          '100%': { transform: 'translateY(100%)' },
+        },
+        'exec-ticker': {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(-50%)' },
+        },
+        'exec-grid-drift': {
+          '0%': { transform: 'translate(0, 0)' },
+          '100%': { transform: 'translate(30px, 30px)' },
+        },
+        'exec-terminal-line': {
+          '0%': { opacity: '0', transform: 'translateY(8px)' },
+          '10%': { opacity: '1', transform: 'translateY(0)' },
+          '90%': { opacity: '1' },
+          '100%': { opacity: '0.5' },
+        },
+        'exec-number-tick': {
+          '0%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-2px)' },
+          '100%': { transform: 'translateY(0)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -226,6 +259,11 @@ const config: Config = {
         scanline: 'scanline 8s linear infinite',
         'cyber-pulse': 'cyber-pulse 2s ease-in-out infinite',
         'data-flow': 'data-flow 3s linear infinite',
+        'exec-scan': 'exec-scan 6s linear infinite',
+        'exec-ticker': 'exec-ticker 30s linear infinite',
+        'exec-grid-drift': 'exec-grid-drift 20s linear infinite',
+        'exec-terminal-line': 'exec-terminal-line 2s ease-out forwards',
+        'exec-number-tick': 'exec-number-tick 0.3s ease-out',
       },
       backgroundImage: {
         'sunset-gradient': 'linear-gradient(180deg, #00ff9d 0%, #00d4ff 15%, #7b61ff 35%, #1a0044 55%, #050a14 100%)',
