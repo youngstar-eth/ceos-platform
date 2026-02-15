@@ -40,10 +40,11 @@ export function DeployWizard() {
   const [demoStatus, setDemoStatus] = useState<DeployStatus>('idle');
   const [demoError, setDemoError] = useState<string | null>(null);
   const [deployedAgentId, setDeployedAgentId] = useState<string | null>(null);
+  const [authCredentials, setAuthCredentials] = useState<{ message: string; signature: string } | null>(null);
 
   const { deploy, status: onChainStatus, txHash, error: onChainError, reset } = useDeploy();
   const { address } = useAccount();
-  const { signMessageAsync: _signMessageAsync } = useSignMessage();
+  const { signMessageAsync } = useSignMessage();
   const router = useRouter();
 
   const status = DEMO_MODE ? demoStatus : onChainStatus;
@@ -148,9 +149,10 @@ export function DeployWizard() {
     if (!address) return;
 
     try {
-      // Step 1: Create agent config in database first (same as demo mode)
+      // Step 1: Sign a message with the wallet to authenticate
       const message = `deploy:${config.persona.name}:${Date.now()}`;
-      const signature = 'onchain-mode-signature';
+      const signature = await signMessageAsync({ message });
+      setAuthCredentials({ message, signature });
 
       const createRes = await fetch('/api/agents', {
         method: 'POST',
@@ -208,20 +210,20 @@ export function DeployWizard() {
       onChainStatus === 'confirmed' &&
       txHash &&
       deployedAgentId &&
+      authCredentials &&
       !hasNotifiedBackend.current
     ) {
       hasNotifiedBackend.current = true;
 
       const notifyBackend = async () => {
         try {
-          const message = `deploy-confirm:${deployedAgentId}:${Date.now()}`;
           const res = await fetch('/api/agents/deploy', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'x-wallet-address': address ?? '',
-              'x-wallet-signature': 'onchain-confirmed',
-              'x-wallet-message': message,
+              'x-wallet-signature': authCredentials.signature,
+              'x-wallet-message': authCredentials.message,
             },
             body: JSON.stringify({ agentId: deployedAgentId, txHash }),
           });
@@ -236,7 +238,7 @@ export function DeployWizard() {
 
       void notifyBackend();
     }
-  }, [onChainStatus, txHash, deployedAgentId, address]);
+  }, [onChainStatus, txHash, deployedAgentId, address, authCredentials]);
 
   const handleDeploy = DEMO_MODE ? handleDemoDeploy : handleOnChainDeploy;
 
