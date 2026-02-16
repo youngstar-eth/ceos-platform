@@ -20,6 +20,9 @@ const envSchema = z.object({
     : z.string().url('BASE_RPC_URL must be a valid URL'),
   NEXT_PUBLIC_CHAIN_ID: z.coerce.number().int().default(8453),
   NEXT_PUBLIC_DEMO_MODE: z.string().optional(),
+  DEPLOYER_PRIVATE_KEY: z.string().optional(),
+  NEXT_PUBLIC_FEE_SPLITTER_ADDRESS: z.string().optional(),
+  NEXT_PUBLIC_SCOUT_FUND_ADDRESS: z.string().optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 });

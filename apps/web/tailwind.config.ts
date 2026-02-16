@@ -25,6 +25,7 @@ const config: Config = {
         orbitron: ['var(--font-orbitron)', 'monospace'],
         pixel: ['var(--font-pixel)', 'monospace'],
         rajdhani: ['var(--font-rajdhani)', 'sans-serif'],
+        'share-tech': ['var(--font-share-tech)', 'Courier New', 'monospace'],
       },
       colors: {
         border: 'hsl(var(--border))',
@@ -108,6 +109,14 @@ const config: Config = {
           surface: '#0A0A0A',
           border: '#1a1a1a',
           muted: '#666666',
+        },
+        cp: {
+          void: '#030014',
+          pink: '#FF00FF',
+          cyan: '#00F0FF',
+          acid: '#CCFF00',
+          surface: '#0a0520',
+          border: '#1a103a',
         },
       },
       borderRadius: {
@@ -237,6 +246,21 @@ const config: Config = {
           '50%': { transform: 'translateY(-2px)' },
           '100%': { transform: 'translateY(0)' },
         },
+        'cp-heartbeat': {
+          '0%, 100%': { boxShadow: '0 0 5px rgba(255,0,255,0.3)' },
+          '50%': { boxShadow: '0 0 20px rgba(255,0,255,0.8), 0 0 40px rgba(255,0,255,0.3)' },
+        },
+        'cp-flicker': {
+          '0%, 19.999%, 22%, 62.999%, 64%, 64.999%, 70%, 100%': { opacity: '1' },
+          '20%, 21.999%, 63%, 63.999%, 65%, 69.999%': { opacity: '0.33' },
+        },
+        'cp-drift': {
+          '0%': { transform: 'translateY(0) translateX(0)' },
+          '25%': { transform: 'translateY(-5px) translateX(3px)' },
+          '50%': { transform: 'translateY(-2px) translateX(-2px)' },
+          '75%': { transform: 'translateY(-8px) translateX(1px)' },
+          '100%': { transform: 'translateY(0) translateX(0)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -264,6 +288,9 @@ const config: Config = {
         'exec-grid-drift': 'exec-grid-drift 20s linear infinite',
         'exec-terminal-line': 'exec-terminal-line 2s ease-out forwards',
         'exec-number-tick': 'exec-number-tick 0.3s ease-out',
+        'cp-heartbeat': 'cp-heartbeat 2s ease-in-out infinite',
+        'cp-flicker': 'cp-flicker 4s linear infinite',
+        'cp-drift': 'cp-drift 12s ease-in-out infinite',
       },
       backgroundImage: {
         'sunset-gradient': 'linear-gradient(180deg, #00ff9d 0%, #00d4ff 15%, #7b61ff 35%, #1a0044 55%, #050a14 100%)',

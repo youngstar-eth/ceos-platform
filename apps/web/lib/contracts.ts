@@ -2,13 +2,21 @@ import { type Address } from 'viem';
 
 // Contract addresses from environment variables (trimmed to prevent whitespace issues)
 export const CONTRACT_ADDRESSES = {
+  // v1 Core
   agentFactory: (process.env.NEXT_PUBLIC_FACTORY_ADDRESS?.trim() ?? '0x') as Address,
   agentRegistry: (process.env.NEXT_PUBLIC_REGISTRY_ADDRESS?.trim() ?? '0x') as Address,
   revenuePool: (process.env.NEXT_PUBLIC_REVENUE_POOL_ADDRESS?.trim() ?? '0x') as Address,
   creatorScore: (process.env.NEXT_PUBLIC_CREATOR_SCORE_ADDRESS?.trim() ?? '0x') as Address,
+  ceosScore: (process.env.NEXT_PUBLIC_CEOS_SCORE_ADDRESS?.trim() ?? '0x') as Address,
   erc8004Registry: (process.env.NEXT_PUBLIC_ERC8004_REGISTRY_ADDRESS?.trim() ?? '0x') as Address,
   x402Gate: (process.env.NEXT_PUBLIC_X402_GATE_ADDRESS?.trim() ?? '0x') as Address,
-  usdc: (process.env.NEXT_PUBLIC_USDC_CONTRACT?.trim() ?? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913') as Address,
+  usdc: (process.env.NEXT_PUBLIC_USDC_CONTRACT?.trim() ?? '0x036CbD53842c5426634e7929541eC2318f3dCF7e') as Address,
+  // v2 Financial Engine
+  runToken: (process.env.NEXT_PUBLIC_RUN_TOKEN_ADDRESS?.trim() ?? '0x') as Address,
+  stakingRewards: (process.env.NEXT_PUBLIC_STAKING_REWARDS_ADDRESS?.trim() ?? '0x') as Address,
+  feeSplitter: (process.env.NEXT_PUBLIC_FEE_SPLITTER_ADDRESS?.trim() ?? '0x') as Address,
+  scoutFund: (process.env.NEXT_PUBLIC_SCOUT_FUND_ADDRESS?.trim() ?? '0x') as Address,
+  agentTreasuryImpl: (process.env.NEXT_PUBLIC_AGENT_TREASURY_IMPL_ADDRESS?.trim() ?? '0x') as Address,
 } as const;
 
 // ABIs generated from contracts/out/ (Foundry compiled output)
@@ -1248,6 +1256,300 @@ export const CREATOR_SCORE_ABI = [
   }
 ] as const;
 
+// ── StakingRewards ABI (MasterChef-style + Patron Multiplier) ──
+
+export const STAKING_REWARDS_ABI = [
+  {
+    type: 'function',
+    name: 'stake',
+    inputs: [{ name: 'pid', type: 'uint256' }, { name: 'amount', type: 'uint256' }],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'withdraw',
+    inputs: [{ name: 'pid', type: 'uint256' }, { name: 'amount', type: 'uint256' }],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'harvest',
+    inputs: [{ name: 'pid', type: 'uint256' }],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'pendingRewards',
+    inputs: [{ name: 'pid', type: 'uint256' }, { name: 'user', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getUserInfo',
+    inputs: [{ name: 'pid', type: 'uint256' }, { name: 'user', type: 'address' }],
+    outputs: [{
+      name: '',
+      type: 'tuple',
+      components: [
+        { name: 'amount', type: 'uint256' },
+        { name: 'rewardDebt', type: 'uint256' },
+        { name: 'lastDepositTime', type: 'uint256' },
+      ],
+    }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getPoolInfo',
+    inputs: [{ name: 'pid', type: 'uint256' }],
+    outputs: [{
+      name: '',
+      type: 'tuple',
+      components: [
+        { name: 'stakingToken', type: 'address' },
+        { name: 'agentToken', type: 'address' },
+        { name: 'agentTokenThreshold', type: 'uint256' },
+        { name: 'totalStaked', type: 'uint256' },
+        { name: 'allocPoint', type: 'uint256' },
+        { name: 'lastRewardTime', type: 'uint256' },
+        { name: 'accRunPerShare', type: 'uint256' },
+      ],
+    }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getUserBoostStatus',
+    inputs: [{ name: 'pid', type: 'uint256' }, { name: 'user', type: 'address' }],
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'runPerSecond',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'totalAllocPoint',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'poolCount',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'PATRON_MULTIPLIER',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+] as const;
+
+// ── AgentTreasury ABI (Per-agent DEX trading + buyback) ──
+
+export const AGENT_TREASURY_ABI = [
+  {
+    type: 'function',
+    name: 'getETHBalance',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getTrackedBalances',
+    inputs: [],
+    outputs: [{
+      name: 'balances',
+      type: 'tuple[]',
+      components: [
+        { name: 'token', type: 'address' },
+        { name: 'balance', type: 'uint256' },
+      ],
+    }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getTotalBurns',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getTotalBurnedAmount',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+] as const;
+
+// ── ScoutFund ABI (Protocol-owned venture capital) ──
+
+export const SCOUT_FUND_ABI = [
+  {
+    type: 'function',
+    name: 'getETHBalance',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getPositionCount',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getPosition',
+    inputs: [{ name: 'agentToken', type: 'address' }],
+    outputs: [{
+      name: '',
+      type: 'tuple',
+      components: [
+        { name: 'token', type: 'address' },
+        { name: 'totalInvested', type: 'uint256' },
+        { name: 'totalTokensAcquired', type: 'uint256' },
+        { name: 'totalDivested', type: 'uint256' },
+        { name: 'investmentCount', type: 'uint256' },
+        { name: 'firstInvestedAt', type: 'uint256' },
+        { name: 'lastInvestedAt', type: 'uint256' },
+      ],
+    }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'isScoutable',
+    inputs: [{ name: 'token', type: 'address' }],
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view',
+  },
+] as const;
+
+// ── FeeSplitter ABI (Protocol fee distribution: 40/40/20 split) ──
+
+export const FEE_SPLITTER_ABI = [
+  {
+    type: 'function',
+    name: 'getClaimable',
+    inputs: [{ name: 'recipient', type: 'address' }],
+    outputs: [
+      { name: 'ethAmount', type: 'uint256' },
+      { name: 'usdcAmount', type: 'uint256' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getDistributionCount',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getDistribution',
+    inputs: [{ name: 'distributionId', type: 'uint256' }],
+    outputs: [{
+      name: 'record',
+      type: 'tuple',
+      components: [
+        { name: 'distributor', type: 'address' },
+        { name: 'agentTreasury', type: 'address' },
+        { name: 'totalETH', type: 'uint256' },
+        { name: 'totalUSDC', type: 'uint256' },
+        { name: 'timestamp', type: 'uint256' },
+      ],
+    }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'claimETH',
+    inputs: [],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'claimUSDC',
+    inputs: [],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'protocolTreasury',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'scoutFund',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+  },
+] as const;
+
+// ── ERC20 minimal ABI (for approve/allowance on staking tokens) ──
+
+export const ERC20_ABI = [
+  {
+    type: 'function',
+    name: 'approve',
+    inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }],
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'allowance',
+    inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'balanceOf',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'symbol',
+    inputs: [],
+    outputs: [{ name: '', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'decimals',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+] as const;
+
 // Typed contract helpers
 export function getAgentFactoryContract() {
   return {
@@ -1267,6 +1569,34 @@ export function getCreatorScoreContract() {
   return {
     address: CONTRACT_ADDRESSES.creatorScore,
     abi: CREATOR_SCORE_ABI,
+  } as const;
+}
+
+export function getStakingRewardsContract() {
+  return {
+    address: CONTRACT_ADDRESSES.stakingRewards,
+    abi: STAKING_REWARDS_ABI,
+  } as const;
+}
+
+export function getAgentTreasuryContract(address: Address) {
+  return {
+    address,
+    abi: AGENT_TREASURY_ABI,
+  } as const;
+}
+
+export function getScoutFundContract() {
+  return {
+    address: CONTRACT_ADDRESSES.scoutFund,
+    abi: SCOUT_FUND_ABI,
+  } as const;
+}
+
+export function getFeeSplitterContract() {
+  return {
+    address: CONTRACT_ADDRESSES.feeSplitter,
+    abi: FEE_SPLITTER_ABI,
   } as const;
 }
 

@@ -12,14 +12,11 @@ import {
   Activity,
   Clock,
   Loader2,
-  Trophy,
   Globe,
   ArrowUpRight,
 } from 'lucide-react';
 import { StatCard } from '@/components/shared/stat-card';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useAgents } from '@/hooks/use-agent';
 import { useClaimableAmount, useOnChainCreatorScore, useCurrentEpoch } from '@/hooks/use-revenue';
 
@@ -79,12 +76,7 @@ const activityIcons: Record<string, React.ComponentType<{ className?: string }>>
   deploy: Rocket,
 };
 
-const activityColors: Record<string, string> = {
-  cast: 'text-neon-cyan bg-neon-cyan/10 border-neon-cyan/20',
-  engagement: 'text-neon-green bg-neon-green/10 border-neon-green/20',
-  revenue: 'text-neon-yellow bg-neon-yellow/10 border-neon-yellow/20',
-  deploy: 'text-neon-purple bg-neon-purple/10 border-neon-purple/20',
-};
+
 
 export default function DashboardPage() {
   const { data: agentsResponse, isLoading: agentsLoading } = useAgents(1, 100);
@@ -108,18 +100,29 @@ export default function DashboardPage() {
   const creatorScore = scoreRaw ? Number(scoreRaw) : 0;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-8 min-h-screen bg-[#030014] text-white selection:bg-cp-pink/20 pb-20">
+      {/* Background FX */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]" />
+        <div className="absolute left-0 right-0 top-0 -z-10 m-auto h-[310px] w-[310px] rounded-full bg-cp-cyan/20 opacity-20 blur-[100px]" />
+        <div className="absolute right-0 top-0 -z-10 h-[310px] w-[310px] rounded-full bg-cp-pink/20 opacity-20 blur-[100px]" />
+      </div>
+
+      <div className="relative z-10 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold font-orbitron text-neon-green">Dashboard</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            <span className="text-neon-green/30 font-pixel text-[10px]">{'>'}</span> Overview of your agents and revenue
+          <h1 className="text-4xl font-black font-orbitron uppercase tracking-tight text-white mb-2">
+            Command <span className="text-cp-cyan cp-glow-cyan">Deck</span>
+          </h1>
+          <p className="text-white/40 text-sm font-rajdhani flex items-center gap-2">
+            <span className="text-cp-cyan/50 font-share-tech text-[10px] tracking-widest">SYSTEM.READY</span>
+            <span className="h-1 w-1 rounded-full bg-cp-cyan/50" />
+            Overview of autonomous agents
           </p>
         </div>
         <Link href="/dashboard/deploy">
-          <Button className="brand-gradient text-void hover:opacity-90 font-semibold">
-            <Rocket className="h-4 w-4 mr-2" />
-            Deploy Agent
+          <Button className="bg-cp-pink text-white hover:bg-cp-pink/80 font-orbitron tracking-widest text-[10px] h-10 px-6 cp-box-pink transition-all">
+            <Rocket className="h-3 w-3 mr-2" />
+            INITIALIZE AGENT
           </Button>
         </Link>
       </div>
@@ -152,52 +155,64 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Recent Activity */}
-        <Card className="lg:col-span-2 border-neon-green/10 bg-void/50">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-lg font-rajdhani">Recent Activity</CardTitle>
-            <Badge variant="outline" className="text-xs border-neon-green/20 text-neon-green">
-              <div className="h-1.5 w-1.5 rounded-full bg-neon-green animate-neon-pulse mr-1.5" />
-              Live
-            </Badge>
-          </CardHeader>
-          <CardContent>
+        <div className="lg:col-span-2 cp-glass cp-hud-corners p-1">
+          <div className="flex items-center justify-between p-4 border-b border-white/5 bg-white/[0.02]">
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-cp-cyan" />
+              <h2 className="text-sm font-orbitron tracking-widest text-white/90">SYSTEM LOGS</h2>
+            </div>
+            <div className="flex items-center gap-2 px-2 py-1 rounded-sm bg-cp-acid/10 border border-cp-acid/20">
+              <div className="h-1.5 w-1.5 rounded-full bg-cp-acid animate-pulse" />
+              <span className="text-[9px] font-share-tech text-cp-acid tracking-widest">LIVE</span>
+            </div>
+          </div>
+
+          <div className="p-4">
             {activityLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-5 w-5 animate-spin text-neon-green/50" />
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-cp-cyan/50" />
               </div>
             ) : activities.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <Clock className="h-8 w-8 text-muted-foreground/30 mb-2" />
-                <p className="text-sm text-muted-foreground">No recent activity</p>
-                <p className="text-xs text-muted-foreground/60 mt-1">
-                  Deploy an agent to get started
-                </p>
+              <div className="flex flex-col items-center justify-center py-12 text-center text-white/20">
+                <Clock className="h-10 w-10 mb-3 opacity-20" />
+                <p className="text-sm font-share-tech uppercase tracking-widest">No recent activity</p>
+                <p className="text-xs mt-1">Deploy an agent to initialize logs</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-1">
                 {activities.map((activity) => {
                   const Icon = activityIcons[activity.type] ?? Activity;
-                  const colorClass = activityColors[activity.type] ?? 'text-muted-foreground bg-muted';
+                  // Map legacy activity colors to new system
+                  const colorMap = {
+                    cast: 'text-cp-cyan',
+                    engagement: 'text-cp-acid',
+                    revenue: 'text-cp-acid',
+                    deploy: 'text-cp-pink'
+                  };
+                  // @ts-ignore
+                  const colorClass = colorMap[activity.type] ?? 'text-white/50';
+
                   return (
                     <div
                       key={activity.id}
-                      className="flex items-start gap-3 pb-4 border-b border-neon-green/5 last:border-0 last:pb-0"
+                      className="group flex items-center gap-4 p-3 hover:bg-white/[0.03] transition-colors border-l-2 border-transparent hover:border-cp-cyan"
                     >
-                      <div className={`h-8 w-8 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 ${colorClass}`}>
+                      <div className={`h-8 w-8 rounded bg-white/5 flex items-center justify-center shrink-0 border border-white/10 ${colorClass}`}>
                         <Icon className="h-4 w-4" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm">
-                          <span className="font-medium text-foreground">{activity.agent}</span>
-                          {' '}
-                          <span className="text-muted-foreground">
-                            {activity.action}
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-share-tech text-cp-cyan/80">
+                            {activity.agent}
+                          </p>
+                          <span className="text-[10px] font-share-tech text-white/20">
+                            {formatTimeAgo(activity.timestamp)}
                           </span>
-                        </p>
-                        <p className="text-xs text-muted-foreground/60 mt-0.5 font-pixel">
-                          {formatTimeAgo(activity.timestamp)}
+                        </div>
+                        <p className="text-xs text-white/50 font-rajdhani mt-0.5 truncate">
+                          {activity.action}
                         </p>
                       </div>
                     </div>
@@ -205,101 +220,95 @@ export default function DashboardPage() {
                 })}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Quick Actions */}
-        <Card className="border-neon-green/10 bg-void/50">
-          <CardHeader>
-            <CardTitle className="text-lg font-rajdhani">Quick Actions</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Link href="/dashboard/deploy" className="block">
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-neon-green/10 hover:border-neon-green/25 hover:bg-neon-green/[0.03] transition-all cursor-pointer cyber-card">
-                <div className="h-10 w-10 rounded-lg bg-neon-green/10 border border-neon-green/20 flex items-center justify-center">
-                  <Rocket className="h-5 w-5 text-neon-green" />
+        <div className="cp-glass cp-hud-corners p-1 h-fit">
+          <div className="flex items-center justify-between p-4 border-b border-white/5 bg-white/[0.02]">
+            <div className="flex items-center gap-2">
+              <Rocket className="h-4 w-4 text-cp-pink" />
+              <h2 className="text-sm font-orbitron tracking-widest text-white/90">QUICK ACCESS</h2>
+            </div>
+          </div>
+
+          <div className="p-4 space-y-3">
+            <Link href="/dashboard/deploy" className="block group">
+              <div className="flex items-center gap-4 p-3 rounded border border-white/5 bg-white/[0.02] hover:bg-cp-pink/[0.05] hover:border-cp-pink/30 transition-all cursor-pointer">
+                <div className="h-10 w-10 rounded bg-cp-pink/10 border border-cp-pink/20 flex items-center justify-center group-hover:bg-cp-pink/20 transition-colors">
+                  <Rocket className="h-5 w-5 text-cp-pink" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium">Deploy New Agent</p>
-                  <p className="text-xs text-muted-foreground">
-                    0.005 ETH on Base
+                  <p className="text-xs font-bold font-orbitron text-white group-hover:text-cp-pink transition-colors">INITIATE AGENT</p>
+                  <p className="text-[10px] text-white/40 font-share-tech uppercase tracking-wider">
+                    0.005 ETH // BASE L2
                   </p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-neon-green/30" />
+                <ArrowRight className="h-3 w-3 text-white/20 group-hover:text-cp-pink transition-colors" />
               </div>
             </Link>
-            <Link href="/dashboard/revenue" className="block">
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-neon-green/10 hover:border-neon-cyan/25 hover:bg-neon-cyan/[0.03] transition-all cursor-pointer cyber-card">
-                <div className="h-10 w-10 rounded-lg bg-neon-cyan/10 border border-neon-cyan/20 flex items-center justify-center">
-                  <DollarSign className="h-5 w-5 text-neon-cyan" />
+
+            <Link href="/dashboard/revenue" className="block group">
+              <div className="flex items-center gap-4 p-3 rounded border border-white/5 bg-white/[0.02] hover:bg-cp-acid/[0.05] hover:border-cp-acid/30 transition-all cursor-pointer">
+                <div className="h-10 w-10 rounded bg-cp-acid/10 border border-cp-acid/20 flex items-center justify-center group-hover:bg-cp-acid/20 transition-colors">
+                  <DollarSign className="h-5 w-5 text-cp-acid" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium">Claim Revenue</p>
-                  <p className="text-xs text-muted-foreground">
-                    Check your earnings
+                  <p className="text-xs font-bold font-orbitron text-white group-hover:text-cp-acid transition-colors">CLAIM REVENUE</p>
+                  <p className="text-[10px] text-white/40 font-share-tech uppercase tracking-wider">
+                    WITHDRAW EARNINGS
                   </p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-neon-cyan/30" />
+                <ArrowRight className="h-3 w-3 text-white/20 group-hover:text-cp-acid transition-colors" />
               </div>
             </Link>
-            <Link href="/dashboard/agents" className="block">
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-neon-green/10 hover:border-neon-purple/25 hover:bg-neon-purple/[0.03] transition-all cursor-pointer cyber-card">
-                <div className="h-10 w-10 rounded-lg bg-neon-purple/10 border border-neon-purple/20 flex items-center justify-center">
-                  <Bot className="h-5 w-5 text-neon-purple" />
+
+            <Link href="/dashboard/agents" className="block group">
+              <div className="flex items-center gap-4 p-3 rounded border border-white/5 bg-white/[0.02] hover:bg-cp-cyan/[0.05] hover:border-cp-cyan/30 transition-all cursor-pointer">
+                <div className="h-10 w-10 rounded bg-cp-cyan/10 border border-cp-cyan/20 flex items-center justify-center group-hover:bg-cp-cyan/20 transition-colors">
+                  <Bot className="h-5 w-5 text-cp-cyan" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium">Manage Agents</p>
-                  <p className="text-xs text-muted-foreground">
-                    View all your agents
+                  <p className="text-xs font-bold font-orbitron text-white group-hover:text-cp-cyan transition-colors">FLEET COMMAND</p>
+                  <p className="text-[10px] text-white/40 font-share-tech uppercase tracking-wider">
+                    MANAGE OPERATIVES
                   </p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-neon-purple/30" />
+                <ArrowRight className="h-3 w-3 text-white/20 group-hover:text-cp-cyan transition-colors" />
               </div>
             </Link>
-            <Link href="/dashboard/skills" className="block">
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-neon-green/10 hover:border-neon-yellow/25 hover:bg-neon-yellow/[0.03] transition-all cursor-pointer cyber-card">
-                <div className="h-10 w-10 rounded-lg bg-neon-yellow/10 border border-neon-yellow/20 flex items-center justify-center">
-                  <TrendingUp className="h-5 w-5 text-neon-yellow" />
+
+            <Link href="/dashboard/skills" className="block group">
+              <div className="flex items-center gap-4 p-3 rounded border border-white/5 bg-white/[0.02] hover:bg-cp-cyan/[0.05] hover:border-cp-cyan/30 transition-all cursor-pointer">
+                <div className="h-10 w-10 rounded bg-cp-cyan/10 border border-cp-cyan/20 flex items-center justify-center group-hover:bg-cp-cyan/20 transition-colors">
+                  <TrendingUp className="h-5 w-5 text-cp-cyan" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium">Browse Skills</p>
-                  <p className="text-xs text-muted-foreground">
-                    Free & premium skills
+                  <p className="text-xs font-bold font-orbitron text-white group-hover:text-cp-cyan transition-colors">MARKETPLACE</p>
+                  <p className="text-[10px] text-white/40 font-share-tech uppercase tracking-wider">
+                    ACQUIRE SKILLS
                   </p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-neon-yellow/30" />
+                <ArrowRight className="h-3 w-3 text-white/20 group-hover:text-cp-cyan transition-colors" />
               </div>
             </Link>
-            <Link href="/dashboard/leaderboard" className="block">
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-neon-green/10 hover:border-neon-green/25 hover:bg-neon-green/[0.03] transition-all cursor-pointer cyber-card">
-                <div className="h-10 w-10 rounded-lg bg-neon-green/10 border border-neon-green/20 flex items-center justify-center">
-                  <Trophy className="h-5 w-5 text-neon-green" />
+
+            <a href="https://warpcast.com/~/developers/mini-apps?url=https://ceos.run" target="_blank" rel="noopener noreferrer" className="block group">
+              <div className="flex items-center gap-4 p-3 rounded border border-white/5 bg-white/[0.02] hover:bg-cp-purple/[0.05] hover:border-cp-purple/30 transition-all cursor-pointer">
+                <div className="h-10 w-10 rounded bg-cp-purple/10 border border-cp-purple/20 flex items-center justify-center group-hover:bg-cp-purple/20 transition-colors">
+                  <Globe className="h-5 w-5 text-cp-purple" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium">Leaderboard</p>
-                  <p className="text-xs text-muted-foreground">
-                    CEOS Score rankings
+                  <p className="text-xs font-bold font-orbitron text-white group-hover:text-cp-purple transition-colors">FARCASTER</p>
+                  <p className="text-[10px] text-white/40 font-share-tech uppercase tracking-wider">
+                    MINI-APP PORTAL
                   </p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-neon-green/30" />
-              </div>
-            </Link>
-            <a href="https://warpcast.com/~/developers/mini-apps?url=https://ceos.run" target="_blank" rel="noopener noreferrer" className="block">
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-neon-green/10 hover:border-neon-purple/25 hover:bg-neon-purple/[0.03] transition-all cursor-pointer cyber-card">
-                <div className="h-10 w-10 rounded-lg bg-neon-purple/10 border border-neon-purple/20 flex items-center justify-center">
-                  <Globe className="h-5 w-5 text-neon-purple" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">Farcaster Mini App</p>
-                  <p className="text-xs text-muted-foreground">
-                    Open in Warpcast
-                  </p>
-                </div>
-                <ArrowUpRight className="h-4 w-4 text-neon-purple/30" />
+                <ArrowUpRight className="h-3 w-3 text-white/20 group-hover:text-cp-purple transition-colors" />
               </div>
             </a>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

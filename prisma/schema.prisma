@@ -60,6 +60,7 @@ model Agent {
   tradingMetrics     TradingMetric[]
   walletTransactions WalletTransaction[]
   metricsSnapshots   AgentMetricsSnapshot[]
+  scoutInvestments   ScoutInvestment[]
 
   @@index([creatorAddress])
   @@index([status])
@@ -265,4 +266,35 @@ model AgentMetricsSnapshot {
 
   @@index([agentId, collectedAt(sort: Desc)])
   @@map("agent_metrics_snapshots")
+}
+
+model ScoutInvestment {
+  id         String   @id @default(cuid())
+  agentId    String   @map("agent_id")
+  agentToken String   @map("agent_token")
+  inputToken String   @map("input_token")
+  amountIn   Decimal  @db.Decimal(78, 0) @map("amount_in")
+  amountOut  Decimal  @db.Decimal(78, 0) @map("amount_out")
+  txHash     String?  @unique @map("tx_hash")
+  status     String   @default("pending") // pending | confirmed | failed
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+  @@index([status])
+  @@map("scout_investments")
+}
+
+model FeeDistribution {
+  id                String   @id @default(cuid())
+  totalAmount       Decimal  @db.Decimal(78, 0) @map("total_amount")
+  currency          String   @default("ETH")
+  agentTreasuryAddr String   @map("agent_treasury_addr")
+  txHash            String?  @unique @map("tx_hash")
+  status            String   @default("pending") // pending | confirmed | failed
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([status])
+  @@map("fee_distributions")
 }

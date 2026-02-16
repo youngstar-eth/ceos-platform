@@ -1,0 +1,71 @@
+export const SCOUT_FUND_ABI = [
+  {
+    type: 'function',
+    name: 'invest',
+    inputs: [
+      { name: 'agentToken', type: 'address' },
+      { name: 'inputToken', type: 'address' },
+      { name: 'amountIn', type: 'uint256' },
+      { name: 'fee', type: 'uint24' },
+      { name: 'amountOutMinimum', type: 'uint256' },
+    ],
+    outputs: [{ name: 'amountOut', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'claimFundingETH',
+    inputs: [],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'claimFundingUSDC',
+    inputs: [],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'getETHBalance',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'isScoutable',
+    inputs: [{ name: 'token', type: 'address' }],
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getPosition',
+    inputs: [{ name: 'agentToken', type: 'address' }],
+    outputs: [
+      {
+        name: 'position',
+        type: 'tuple',
+        components: [
+          { name: 'token', type: 'address' },
+          { name: 'totalInvested', type: 'uint256' },
+          { name: 'totalTokensAcquired', type: 'uint256' },
+          { name: 'totalDivested', type: 'uint256' },
+          { name: 'investmentCount', type: 'uint256' },
+          { name: 'firstInvestedAt', type: 'uint256' },
+          { name: 'lastInvestedAt', type: 'uint256' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getPositionCount',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+] as const;

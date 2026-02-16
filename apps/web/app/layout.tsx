@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, Orbitron, Press_Start_2P, Rajdhani } from 'next/font/google';
+import { Inter, Orbitron, Press_Start_2P, Rajdhani, Share_Tech_Mono } from 'next/font/google';
 import { Providers } from './providers';
 import './globals.css';
 
@@ -27,6 +27,13 @@ const rajdhani = Rajdhani({
   subsets: ['latin'],
   variable: '--font-rajdhani',
   weight: ['300', '400', '500', '600', '700'],
+  display: 'swap',
+});
+
+const shareTechMono = Share_Tech_Mono({
+  subsets: ['latin'],
+  variable: '--font-share-tech',
+  weight: '400',
   display: 'swap',
 });
 
@@ -84,7 +91,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body
-        className={`${inter.variable} ${orbitron.variable} ${pressStart.variable} ${rajdhani.variable} font-sans antialiased min-h-screen bg-background text-foreground`}
+        className={`${inter.variable} ${orbitron.variable} ${pressStart.variable} ${rajdhani.variable} ${shareTechMono.variable} font-sans antialiased min-h-screen bg-background text-foreground`}
       >
         <Providers>{children}</Providers>
       </body>

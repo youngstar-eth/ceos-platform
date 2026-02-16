@@ -15,6 +15,9 @@ import { createContentWorker } from '../workers/content-worker.js';
 import { createMetricsWorker } from '../workers/metrics-worker.js';
 import { createPostingWorker } from '../workers/posting-worker.js';
 import { createSchedulerWorker } from '../workers/scheduler.js';
+import { createScoutWorker } from '../workers/scout-worker.js';
+import { createTreasuryWorker } from '../workers/treasury-worker.js';
+import { createFeeDistributorWorker } from '../workers/fee-distributor.js';
 import { getStrategy } from './strategies/posting.js';
 
 const METRICS_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -178,6 +181,14 @@ async function bootstrap(): Promise<RuntimeContext> {
       chainId: config.NEXT_PUBLIC_CHAIN_ID,
     });
     logger.info('BaseChainClient initialized');
+
+    // Initialize wallet for on-chain writes (workers need this)
+    if (config.DEPLOYER_PRIVATE_KEY) {
+      baseChain.initializeWallet(config.DEPLOYER_PRIVATE_KEY);
+      logger.info({ address: baseChain.getAccountAddress() }, 'Wallet initialized for on-chain writes');
+    } else {
+      logger.warn('DEPLOYER_PRIVATE_KEY not set — workers will skip on-chain writes');
+    }
   } else {
     logger.info('DEMO MODE: Skipping BaseChainClient initialization');
   }
@@ -243,9 +254,56 @@ async function bootstrap(): Promise<RuntimeContext> {
   const postingWorker = createPostingWorker(redis, config.NEYNAR_API_KEY);
   const { worker: schedulerWorker, getHealth, shutdown: shutdownScheduler } = createSchedulerWorker(redis);
 
+  // 5b. Initialize financial workers (ScoutWorker, TreasuryWorker, FeeDistributor)
+  let scoutWorker: ReturnType<typeof createScoutWorker> | null = null;
+  let treasuryWorker: ReturnType<typeof createTreasuryWorker> | null = null;
+  let feeDistributorWorker: ReturnType<typeof createFeeDistributorWorker> | null = null;
+  let scoutQueue: Queue | null = null;
+  let treasuryQueue: Queue | null = null;
+  let feeDistQueue: Queue | null = null;
+
+  if (baseChain) {
+    scoutWorker = createScoutWorker(redis, baseChain);
+    treasuryWorker = createTreasuryWorker(redis, baseChain);
+    feeDistributorWorker = createFeeDistributorWorker(redis, baseChain);
+
+    // Create cron queues with repeatable jobs
+    scoutQueue = new Queue('scout-investment', { connection: redis });
+    treasuryQueue = new Queue('treasury-management', { connection: redis });
+    feeDistQueue = new Queue('fee-distribution', { connection: redis });
+
+    // Scout: every 10 minutes
+    await scoutQueue.add('scout-tick', { triggeredAt: new Date().toISOString() }, {
+      jobId: 'scout-repeatable',
+      repeat: { every: 10 * 60 * 1000 },
+      removeOnComplete: 50,
+      removeOnFail: 25,
+    });
+
+    // Treasury: every 5 minutes
+    await treasuryQueue.add('treasury-tick', { triggeredAt: new Date().toISOString() }, {
+      jobId: 'treasury-repeatable',
+      repeat: { every: 5 * 60 * 1000 },
+      removeOnComplete: 100,
+      removeOnFail: 50,
+    });
+
+    // Fee distribution: every 24 hours
+    await feeDistQueue.add('fee-dist-tick', { triggeredAt: new Date().toISOString() }, {
+      jobId: 'fee-dist-repeatable',
+      repeat: { every: 24 * 60 * 60 * 1000 },
+      removeOnComplete: 50,
+      removeOnFail: 25,
+    });
+
+    logger.info('Financial workers + cron queues initialized (scout: 10m, treasury: 5m, fee-dist: 24h)');
+  } else {
+    logger.info('Skipping financial workers — BaseChainClient not available');
+  }
+
   logger.info('BullMQ workers initialized');
 
-  // 5b. Initialize metrics scheduling queue
+  // 5c. Initialize metrics scheduling queue
   const metricsQueue = new Queue('agent-metrics', { connection: redis });
   logger.info('Metrics scheduling queue initialized');
 
@@ -294,17 +352,25 @@ async function bootstrap(): Promise<RuntimeContext> {
       logger.info('Engine shutdown complete');
 
       // Stop workers
-      await Promise.allSettled([
+      const workerClosePromises = [
         contentWorker.close(),
         metricsWorker.close(),
         postingWorker.close(),
         shutdownScheduler(),
-      ]);
+      ];
+      if (scoutWorker) workerClosePromises.push(scoutWorker.close());
+      if (treasuryWorker) workerClosePromises.push(treasuryWorker.close());
+      if (feeDistributorWorker) workerClosePromises.push(feeDistributorWorker.close());
+      await Promise.allSettled(workerClosePromises);
       logger.info('Workers shutdown complete');
 
-      // Close metrics queue
-      await metricsQueue.close();
-      logger.info('Metrics queue closed');
+      // Close queues
+      const queueClosePromises = [metricsQueue.close()];
+      if (scoutQueue) queueClosePromises.push(scoutQueue.close());
+      if (treasuryQueue) queueClosePromises.push(treasuryQueue.close());
+      if (feeDistQueue) queueClosePromises.push(feeDistQueue.close());
+      await Promise.allSettled(queueClosePromises);
+      logger.info('Queues closed');
 
       // Stop scheduler queues
       await scheduler.shutdown();
@@ -367,11 +433,14 @@ async function bootstrap(): Promise<RuntimeContext> {
   runtimeContext = context;
 
   const runningAgents = engine.getRunningAgentIds();
+  const activeWorkers = ['content', 'metrics', 'posting', 'scheduler'];
+  if (scoutWorker) activeWorkers.push('scout', 'treasury', 'fee-distributor');
   logger.info({
-    workers: ['content', 'metrics', 'posting', 'scheduler'],
+    workers: activeWorkers,
     integrations: ['openrouter', 'fal-ai', 'neynar', 'base-chain'],
     activeAgents: runningAgents.length,
     agentIds: runningAgents,
+    walletInitialized: baseChain?.isWalletInitialized() ?? false,
   }, 'ceos.run Agent Runtime started — autonomous mode active');
 
   return context;
