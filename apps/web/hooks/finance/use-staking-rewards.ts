@@ -263,7 +263,7 @@ export function usePoolAPY(pid: number) {
 
   // Annual RUN for this pool = (runPerSecond * allocPoint / totalAllocPoint) * seconds_per_year
   const SECONDS_PER_YEAR = 365n * 24n * 60n * 60n;
-  const poolRunPerYear = (runPerSecond * pool.allocPoint * SECONDS_PER_YEAR) / totalAllocPoint;
+  const poolRunPerYear = ((runPerSecond as bigint) * pool.allocPoint * SECONDS_PER_YEAR) / (totalAllocPoint as bigint);
 
   // APY = (annual_rewards / total_staked) * 100
   // Using 1e18 precision since both are in wei

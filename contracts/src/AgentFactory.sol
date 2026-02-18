@@ -3,27 +3,28 @@ pragma solidity 0.8.24;
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 import { IAgentFactory } from "./interfaces/IAgentFactory.sol";
 import { IAgentRegistry } from "./interfaces/IAgentRegistry.sol";
 import { IERC8004TrustRegistry } from "./interfaces/IERC8004TrustRegistry.sol";
+import { IVirtualsFactory } from "./interfaces/IVirtualsFactory.sol";
 
 /// @title AgentFactory
-/// @notice Factory contract for deploying autonomous AI agents on Base blockchain.
-/// @dev Uses EIP-1167 Clones for gas-efficient agent deployment. Charges 0.005 ETH deploy fee,
-///      split 50/50 between RevenuePool and treasury. Auto-registers agents in AgentRegistry
-///      and mints ERC-8004 identity NFTs.
+/// @notice Orchestrator contract that deploys AI agents via Virtuals Protocol on Base L2.
+/// @dev Replaces the previous EIP-1167 clone approach. Now delegates token creation to the
+///      Virtuals Factory (which creates an ERC-20 + Uniswap V3 pool), then mints an ERC-8004
+///      identity NFT and registers the agent. Deploy fee is forwarded to the FeeSplitter.
+///
+///      Flow: User pays 0.005 ETH -> Virtuals creates token+pool -> ERC-8004 NFT minted
+///            -> Agent registered with token address -> Fee forwarded to FeeSplitter
 contract AgentFactory is IAgentFactory, Ownable, ReentrancyGuard {
-    using Clones for address;
-
     /// @notice Default deploy fee in wei (0.005 ETH)
     uint256 public constant DEFAULT_DEPLOY_FEE = 0.005 ether;
 
     /// @notice Maximum number of agents a single creator can deploy
     uint256 public constant MAX_AGENTS_PER_CREATOR = 10;
 
-    /// @notice The implementation contract address used for EIP-1167 clones
-    address public immutable implementation;
+    /// @notice The Virtuals Protocol factory contract on Base
+    IVirtualsFactory public virtualsFactory;
 
     /// @notice The AgentRegistry contract reference
     IAgentRegistry public agentRegistry;
@@ -31,11 +32,8 @@ contract AgentFactory is IAgentFactory, Ownable, ReentrancyGuard {
     /// @notice The ERC-8004 TrustRegistry contract reference
     IERC8004TrustRegistry public trustRegistry;
 
-    /// @notice The address of the revenue pool receiving 50% of deploy fees
-    address public revenuePool;
-
-    /// @notice The address of the treasury receiving 50% of deploy fees
-    address public treasury;
+    /// @notice The FeeSplitter contract receiving deploy fees
+    address public feeSplitter;
 
     /// @notice Current deploy fee (can be updated by owner)
     uint256 private _deployFee;
@@ -46,86 +44,87 @@ contract AgentFactory is IAgentFactory, Ownable, ReentrancyGuard {
     /// @notice Mapping of creator address to their deployed agent addresses
     mapping(address => address[]) private _creatorAgents;
 
-    /// @param _implementation The implementation address for EIP-1167 clones
+    /// @notice Mapping of agent address to its Virtuals ERC-20 token address
+    mapping(address => address) private _agentToVirtualsToken;
+
+    /// @param _virtualsFactory The Virtuals Protocol factory address on Base
     /// @param _agentRegistry The AgentRegistry contract address
     /// @param _trustRegistry The ERC-8004 TrustRegistry contract address
-    /// @param _revenuePool The RevenuePool contract address
-    /// @param _treasury The treasury wallet address
+    /// @param _feeSplitter The FeeSplitter contract address
     constructor(
-        address _implementation,
+        address _virtualsFactory,
         address _agentRegistry,
         address _trustRegistry,
-        address _revenuePool,
-        address _treasury
+        address _feeSplitter
     ) Ownable(msg.sender) {
-        if (_implementation == address(0)) revert ZeroAddress();
+        if (_virtualsFactory == address(0)) revert ZeroAddress();
         if (_agentRegistry == address(0)) revert ZeroAddress();
         if (_trustRegistry == address(0)) revert ZeroAddress();
-        if (_revenuePool == address(0)) revert ZeroAddress();
-        if (_treasury == address(0)) revert ZeroAddress();
+        if (_feeSplitter == address(0)) revert ZeroAddress();
 
-        implementation = _implementation;
+        virtualsFactory = IVirtualsFactory(_virtualsFactory);
         agentRegistry = IAgentRegistry(_agentRegistry);
         trustRegistry = IERC8004TrustRegistry(_trustRegistry);
-        revenuePool = _revenuePool;
-        treasury = _treasury;
+        feeSplitter = _feeSplitter;
         _deployFee = DEFAULT_DEPLOY_FEE;
     }
 
-    /// @notice Deploy a new autonomous AI agent
-    /// @dev Creates an EIP-1167 clone, mints ERC-8004 identity, registers in AgentRegistry,
-    ///      and splits the deploy fee 50/50 between RevenuePool and treasury.
-    /// @param name The human-readable name of the agent
-    /// @param symbol The token symbol for the agent (unused in clone but stored for metadata)
-    /// @param agentURI The URI containing agent metadata (Farcaster FID, x402 endpoint, A2A endpoint)
-    /// @return agent The address of the newly deployed agent clone
-    function deployAgent(string calldata name, string calldata symbol, string calldata agentURI)
-        external
-        payable
-        nonReentrant
-        returns (address agent)
-    {
+    /// @notice Deploy a new AI agent via Virtuals Protocol
+    /// @dev Calls Virtuals Factory to create the token + liquidity pool, mints an ERC-8004
+    ///      identity NFT, registers the agent in the registry, and forwards the deploy fee
+    ///      to the FeeSplitter contract.
+    /// @param name The human-readable name of the agent (used for token name)
+    /// @param symbol The token ticker symbol (e.g., "ALPHA")
+    /// @param agentURI Metadata URI containing Farcaster FID, x402 endpoint, A2A endpoint
+    /// @return agent The address of the newly created Virtuals token (acts as agent identity)
+    function deployAgent(
+        string calldata name,
+        string calldata symbol,
+        string calldata agentURI
+    ) external payable nonReentrant returns (address agent) {
         if (msg.value < _deployFee) revert InsufficientDeployFee();
         if (_creatorAgents[msg.sender].length >= MAX_AGENTS_PER_CREATOR) revert MaxAgentsReached();
 
-        // Create deterministic clone using sender + agent count as salt
-        agent = implementation.cloneDeterministic(
-            keccak256(abi.encodePacked(msg.sender, _creatorAgents[msg.sender].length))
-        );
+        // Step 1: Deploy token + pool via Virtuals Protocol
+        agent = virtualsFactory.deployAgent(name, symbol, agentURI);
+        if (agent == address(0)) revert VirtualsDeployFailed();
 
-        // Increment FID counter and assign
-        _fidCounter++;
-
-        // Mint ERC-8004 identity NFT and register agent
+        // Step 2: Mint ERC-8004 identity NFT
         uint256 tokenId = trustRegistry.mintIdentity(agent, agentURI);
+
+        // Step 3: Register agent with Virtuals token address
+        _fidCounter++;
         agentRegistry.registerAgent(agent, _fidCounter, agentURI, msg.sender);
 
-        // Track creator's agents
+        // Step 4: Track creator's agents and token mapping
         _creatorAgents[msg.sender].push(agent);
+        _agentToVirtualsToken[agent] = agent;
 
-        // Split fee 50/50 between revenue pool and treasury
-        _splitFee(msg.value);
+        // Step 5: Forward entire deploy fee to FeeSplitter
+        _forwardFee(msg.value);
 
-        emit AgentDeployed(msg.sender, agent, tokenId, name);
-
-        // Suppress unused variable warning
-        symbol;
+        emit AgentDeployed(msg.sender, agent, tokenId, name, agent);
     }
 
-    /// @notice Internal function to split deploy fee 50/50 between revenue pool and treasury
-    /// @param amount The total fee amount to split
-    function _splitFee(uint256 amount) private {
-        uint256 halfFee = amount / 2;
-        (bool sentToPool,) = revenuePool.call{ value: halfFee }("");
-        if (!sentToPool) revert ZeroAddress();
+    /// @notice Forward deploy fee to the FeeSplitter contract
+    /// @param amount The fee amount to forward
+    function _forwardFee(uint256 amount) private {
+        (bool sent,) = feeSplitter.call{ value: amount }("");
+        if (!sent) revert FeeForwardFailed();
+    }
 
-        (bool sentToTreasury,) = treasury.call{ value: amount - halfFee }("");
-        if (!sentToTreasury) revert ZeroAddress();
+    // ── Views ──────────────────────────────────────────────
+
+    /// @notice Get the Virtuals token address for an agent
+    /// @param agent The agent address
+    /// @return The Virtuals ERC-20 token address
+    function getVirtualsToken(address agent) external view returns (address) {
+        return _agentToVirtualsToken[agent];
     }
 
     /// @notice Get all agents deployed by a specific creator
     /// @param creator The creator's wallet address
-    /// @return An array of agent contract addresses deployed by the creator
+    /// @return An array of agent addresses deployed by the creator
     function getAgentsByCreator(address creator) external view returns (address[] memory) {
         return _creatorAgents[creator];
     }
@@ -143,6 +142,8 @@ contract AgentFactory is IAgentFactory, Ownable, ReentrancyGuard {
         return _creatorAgents[creator].length;
     }
 
+    // ── Admin ──────────────────────────────────────────────
+
     /// @notice Update the deploy fee (owner only)
     /// @param newFee The new deploy fee in wei
     function setDeployFee(uint256 newFee) external onlyOwner {
@@ -151,12 +152,21 @@ contract AgentFactory is IAgentFactory, Ownable, ReentrancyGuard {
         emit DeployFeeUpdated(oldFee, newFee);
     }
 
-    /// @notice Update the treasury address (owner only)
-    /// @param newTreasury The new treasury wallet address
-    function setTreasury(address newTreasury) external onlyOwner {
-        if (newTreasury == address(0)) revert ZeroAddress();
-        address oldTreasury = treasury;
-        treasury = newTreasury;
-        emit TreasuryUpdated(oldTreasury, newTreasury);
+    /// @notice Update the FeeSplitter address (owner only)
+    /// @param newFeeSplitter The new FeeSplitter contract address
+    function setFeeSplitter(address newFeeSplitter) external onlyOwner {
+        if (newFeeSplitter == address(0)) revert ZeroAddress();
+        address oldSplitter = feeSplitter;
+        feeSplitter = newFeeSplitter;
+        emit FeeSplitterUpdated(oldSplitter, newFeeSplitter);
+    }
+
+    /// @notice Update the Virtuals Factory address (owner only)
+    /// @param newFactory The new Virtuals Factory address
+    function setVirtualsFactory(address newFactory) external onlyOwner {
+        if (newFactory == address(0)) revert ZeroAddress();
+        address oldFactory = address(virtualsFactory);
+        virtualsFactory = IVirtualsFactory(newFactory);
+        emit VirtualsFactoryUpdated(oldFactory, newFactory);
     }
 }

@@ -44,7 +44,8 @@ export function StakingCard({ pid, poolName, tokenSymbol, className }: StakingCa
   const { data: poolInfoRaw, isLoading: poolLoading } = usePoolInfo(pid);
   const { data: userInfoRaw, isLoading: userLoading } = useUserInfo(pid);
   const { data: pendingRaw, isLoading: rewardsLoading } = usePendingRewards(pid);
-  const { data: isBoosted } = useBoostStatus(pid);
+  const { data: isBoostedRaw } = useBoostStatus(pid);
+  const isBoosted = Boolean(isBoostedRaw);
   const { apy, isLoading: apyLoading } = usePoolAPY(pid);
 
   const poolInfo = poolInfoRaw as PoolInfo | undefined;

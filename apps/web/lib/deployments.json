@@ -1,0 +1,17 @@
+{
+  "network": "base-sepolia",
+  "chainId": 84532,
+  "deployedAt": 1771330102,
+  "agentFactory": "0x92a51413a65b8653B16DFCE0e976F3f868B44C40",
+  "agentRegistry": "0x18e9cc4ff9DF50DD2Df2A06ecC57C8D79e01EA05",
+  "trustRegistry": "0x23922b1B38b632117644FA1FE06C3e40Edbd129A",
+  "creatorScore": "0x3a1877741060a5425d3cD823f31ddf5C3052Cab2",
+  "ceosScore": "0x00CF34978C83c8d2C5d9837cff22A5367d6e3500",
+  "x402PaymentGate": "0x497819917367dECBC0aF6CAf5cD0a62b31506EBa",
+  "runToken": "0xe4cBEEB8936f23a6b43eeeDC518D06aD2D1F17DA",
+  "stakingRewards": "0x4DD7eb115050B48b961EFc171e909799912b7d64",
+  "feeSplitter": "0x5FB5a8518D4B3a4615357759EbFd37DfE8139638",
+  "swapRouter": "0x64bCa7760eDaD4D69Aa8e053254D9Aa7cee0E867",
+  "virtualsFactory": "0x1BeeA79664E9f10fbF3703143b71c3615d0A27b9",
+  "usdc": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+}

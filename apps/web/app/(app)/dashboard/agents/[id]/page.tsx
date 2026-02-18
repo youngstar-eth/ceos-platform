@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -17,6 +18,11 @@ import {
   Clock,
   Settings,
   Loader2,
+  Copy,
+  Check,
+  Wallet,
+  Shield,
+  Zap,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,8 +30,9 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { StatCard } from '@/components/shared/stat-card';
-import { useAgent } from '@/hooks/use-agent';
-import { cn, getBaseScanUrl } from '@/lib/utils';
+import { useAccount } from 'wagmi';
+import { useAgent, useActivateAgent } from '@/hooks/use-agent';
+import { cn, formatAddress, getBaseScanUrl } from '@/lib/utils';
 
 const statusColors: Record<string, string> = {
   ACTIVE: 'bg-green-500/10 text-green-500 border-green-500/20',
@@ -40,10 +47,40 @@ const statusColors: Record<string, string> = {
   FAILED: 'bg-red-500/10 text-red-500 border-red-500/20',
 };
 
+function CopyButton({ value, className }: { value: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    void navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className={cn('h-6 w-6 shrink-0', className)}
+      onClick={handleCopy}
+    >
+      {copied ? (
+        <Check className="h-3.5 w-3.5 text-green-500" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
+    </Button>
+  );
+}
+
 export default function AgentDetailPage() {
   const params = useParams();
   const id = params.id as string;
+  const { address: connectedAddress } = useAccount();
   const { data: response, isLoading, error } = useAgent(id);
+  const activateMutation = useActivateAgent();
+  const [farcasterInput, setFarcasterInput] = useState('');
+  const [showActivateForm, setShowActivateForm] = useState(false);
 
   if (isLoading) {
     return (
@@ -80,6 +117,7 @@ export default function AgentDetailPage() {
   const metrics = (agentRecord.metrics as Array<Record<string, unknown>>) ?? [];
   const identity = agentRecord.identity as Record<string, unknown> | null;
   const latestMetrics = metrics[0] ?? null;
+  const walletPolicy = agent.walletPolicy;
 
   const totalCasts = latestMetrics ? Number(latestMetrics.totalCasts ?? 0) : casts.length;
   const totalLikes = latestMetrics ? Number(latestMetrics.totalLikes ?? 0) : 0;
@@ -129,17 +167,60 @@ export default function AgentDetailPage() {
                   {agent.status.toLowerCase()}
                 </Badge>
               </div>
-              <p className="text-sm text-muted-foreground">
-                {agent.farcasterFid ? (
-                  <>FID #{agent.farcasterFid}</>
+              <div className="flex items-center gap-3 mt-0.5">
+                {agent.farcasterUsername ? (
+                  <a
+                    href={`https://warpcast.com/${agent.farcasterUsername}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-primary hover:underline flex items-center gap-1"
+                  >
+                    @{agent.farcasterUsername}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                ) : agent.farcasterFid ? (
+                  <span className="text-sm text-muted-foreground">
+                    FID #{agent.farcasterFid}
+                  </span>
                 ) : (
-                  <>ID: {agent.id.slice(0, 8)}...</>
+                  <span className="text-sm text-muted-foreground">
+                    ID: {agent.id.slice(0, 8)}...
+                  </span>
                 )}
-              </p>
+                {agent.walletAddress && (
+                  <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                    <Wallet className="h-3.5 w-3.5" />
+                    <span className="font-mono">{formatAddress(agent.walletAddress)}</span>
+                    <CopyButton value={agent.walletAddress} />
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {(agent.status === 'PENDING' || agent.status === 'DEPLOYING') && (
+            <Button
+              size="sm"
+              className="bg-primary"
+              onClick={() => setShowActivateForm(!showActivateForm)}
+            >
+              <Zap className="h-4 w-4 mr-2" />
+              Activate
+            </Button>
+          )}
+          {agent.farcasterUsername && (
+            <a
+              href={`https://warpcast.com/${agent.farcasterUsername}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button variant="outline" size="sm">
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Warpcast
+              </Button>
+            </a>
+          )}
           {agent.status === 'ACTIVE' || agent.status === 'active' ? (
             <Button variant="outline" size="sm">
               <Pause className="h-4 w-4 mr-2" />
@@ -162,6 +243,66 @@ export default function AgentDetailPage() {
           </Button>
         </div>
       </div>
+
+      {/* Activate Form */}
+      {showActivateForm && (agent.status === 'PENDING' || agent.status === 'DEPLOYING') && (
+        <Card className="border-primary/50">
+          <CardContent className="p-4">
+            <p className="text-sm font-medium mb-3">
+              Activate Agent &mdash; Link a Farcaster account and create a CDP MPC wallet
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Farcaster username (e.g. dwr.eth)"
+                value={farcasterInput}
+                onChange={(e) => setFarcasterInput(e.target.value)}
+                className="flex-1 px-3 py-2 text-sm rounded-md border bg-background"
+              />
+              <Button
+                size="sm"
+                disabled={!farcasterInput.trim() || activateMutation.isPending}
+                onClick={() => {
+                  activateMutation.mutate({
+                    id: agent.id,
+                    farcasterUsername: farcasterInput.trim(),
+                    walletAddress: connectedAddress,
+                  });
+                }}
+              >
+                {activateMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Creating wallet...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="h-4 w-4 mr-2" />
+                    Confirm
+                  </>
+                )}
+              </Button>
+            </div>
+            {activateMutation.isError && (
+              <p className="text-sm text-red-500 mt-2">
+                {activateMutation.error.message}
+              </p>
+            )}
+            {activateMutation.isSuccess && (
+              <div className="mt-3 p-3 rounded-md bg-green-500/10 border border-green-500/20">
+                <p className="text-sm text-green-500 font-medium">
+                  {activateMutation.data.data.message}
+                </p>
+                {activateMutation.data.data.agent.walletAddress && (
+                  <p className="text-xs text-muted-foreground font-mono mt-1">
+                    CDP Wallet: {activateMutation.data.data.agent.walletAddress}
+                  </p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -222,12 +363,25 @@ export default function AgentDetailPage() {
                         {Number(cast.replies ?? 0)}
                       </span>
                     </div>
-                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="h-3.5 w-3.5" />
-                      {cast.publishedAt
-                        ? new Date(String(cast.publishedAt)).toLocaleDateString()
-                        : 'Draft'}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      {agent.farcasterUsername && Boolean(cast.hash) && (
+                        <a
+                          href={`https://warpcast.com/${agent.farcasterUsername}/${String(cast.hash).slice(0, 10)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary hover:underline flex items-center gap-1"
+                        >
+                          View on Warpcast
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Clock className="h-3.5 w-3.5" />
+                        {cast.publishedAt
+                          ? new Date(String(cast.publishedAt)).toLocaleDateString()
+                          : 'Draft'}
+                      </span>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -297,7 +451,7 @@ export default function AgentDetailPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="identity" className="mt-4">
+        <TabsContent value="identity" className="space-y-4 mt-4">
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">ERC-8004 Identity</CardTitle>
@@ -306,13 +460,33 @@ export default function AgentDetailPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-4 rounded-lg bg-muted/50 space-y-1">
                   <p className="text-xs text-muted-foreground">Agent ID</p>
-                  <p className="text-sm font-semibold font-mono">{agent.id}</p>
+                  <div className="flex items-center gap-1">
+                    <p className="text-sm font-semibold font-mono truncate">{agent.id}</p>
+                    <CopyButton value={agent.id} />
+                  </div>
                 </div>
                 <div className="p-4 rounded-lg bg-muted/50 space-y-1">
-                  <p className="text-xs text-muted-foreground">Farcaster FID</p>
-                  <p className="text-sm font-semibold">
-                    {agent.farcasterFid ? `#${agent.farcasterFid}` : 'Not assigned'}
-                  </p>
+                  <p className="text-xs text-muted-foreground">Farcaster</p>
+                  {agent.farcasterUsername ? (
+                    <a
+                      href={`https://warpcast.com/${agent.farcasterUsername}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-semibold text-primary hover:underline flex items-center gap-1"
+                    >
+                      @{agent.farcasterUsername}
+                      {agent.farcasterFid && (
+                        <span className="text-muted-foreground font-normal">
+                          (FID #{agent.farcasterFid})
+                        </span>
+                      )}
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : agent.farcasterFid ? (
+                    <p className="text-sm font-semibold">FID #{agent.farcasterFid}</p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Not assigned</p>
+                  )}
                 </div>
                 <div className="p-4 rounded-lg bg-muted/50 space-y-1">
                   <p className="text-xs text-muted-foreground">Created</p>
@@ -351,6 +525,74 @@ export default function AgentDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Agent Wallet & Policy Card */}
+          {agent.walletAddress && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Shield className="h-5 w-5" />
+                  Agent Wallet
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                  <Wallet className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-sm font-mono">{agent.walletAddress}</span>
+                  <CopyButton value={agent.walletAddress} className="ml-auto" />
+                  <a
+                    href={`${getBaseScanUrl()}/address/${agent.walletAddress}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button variant="ghost" size="icon" className="h-6 w-6">
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </Button>
+                  </a>
+                </div>
+
+                {walletPolicy && (
+                  <>
+                    <Separator />
+                    <div>
+                      <p className="text-sm font-medium mb-3">Wallet Policy</p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {walletPolicy.spendLimit && (
+                          <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                            <p className="text-xs text-muted-foreground">Spend Limit</p>
+                            <p className="text-sm font-semibold">
+                              {walletPolicy.spendLimit.amount} {walletPolicy.spendLimit.currency}
+                            </p>
+                            <p className="text-xs text-muted-foreground capitalize">
+                              per {walletPolicy.spendLimit.period}
+                            </p>
+                          </div>
+                        )}
+                        <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                          <p className="text-xs text-muted-foreground">Whitelisted Contracts</p>
+                          <p className="text-sm font-semibold">
+                            {walletPolicy.whitelist?.length ?? 0} addresses
+                          </p>
+                        </div>
+                        {walletPolicy.approvalRequiredFor && walletPolicy.approvalRequiredFor.length > 0 && (
+                          <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                            <p className="text-xs text-muted-foreground">Requires Approval</p>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {walletPolicy.approvalRequiredFor.map((action) => (
+                                <Badge key={action} variant="outline" className="text-[10px]">
+                                  {action}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

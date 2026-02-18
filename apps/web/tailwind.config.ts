@@ -22,10 +22,13 @@ const config: Config = {
     extend: {
       fontFamily: {
         sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
+        heading: ['var(--font-unbounded)', 'sans-serif'],
         orbitron: ['var(--font-orbitron)', 'monospace'],
         pixel: ['var(--font-pixel)', 'monospace'],
         rajdhani: ['var(--font-rajdhani)', 'sans-serif'],
         'share-tech': ['var(--font-share-tech)', 'Courier New', 'monospace'],
+        mono: ['var(--font-jetbrains-mono)', 'monospace'],
+        unbounded: ['var(--font-unbounded)', 'sans-serif'],
       },
       colors: {
         border: 'hsl(var(--border))',
@@ -64,6 +67,7 @@ const config: Config = {
         /* Cybercore palette */
         neon: {
           green: '#00ff9d',
+          'cyber-green': '#00FF99',
           cyan: '#00d4ff',
           purple: '#7b61ff',
           pink: '#ff0066',
@@ -79,6 +83,7 @@ const config: Config = {
           glow: '#00ff9d',
         },
         void: '#050505',
+        'accent-dim': 'rgba(0, 255, 153, 0.1)',
         'void-legacy': '#050a14',
         'grid-dark': '#0a1628',
         chrome: {
@@ -109,6 +114,7 @@ const config: Config = {
           surface: '#0A0A0A',
           border: '#1a1a1a',
           muted: '#666666',
+          gold: '#FFD700',
         },
         cp: {
           void: '#030014',
@@ -261,6 +267,22 @@ const config: Config = {
           '75%': { transform: 'translateY(-8px) translateX(1px)' },
           '100%': { transform: 'translateY(0) translateX(0)' },
         },
+        /* Corporate Glitch: "Runner" streaks — diagonal speed lines */
+        'runner-streak-1': {
+          '0%': { opacity: '0.6', transform: 'rotate(-12deg) translateX(20px) scaleX(1)' },
+          '50%': { opacity: '1', transform: 'rotate(-12deg) translateX(-40px) scaleX(1.3)' },
+          '100%': { opacity: '0.6', transform: 'rotate(-12deg) translateX(20px) scaleX(1)' },
+        },
+        'runner-streak-2': {
+          '0%': { opacity: '0.4', transform: 'rotate(-12deg) translateX(10px) scaleX(1)' },
+          '60%': { opacity: '0.8', transform: 'rotate(-12deg) translateX(-30px) scaleX(1.2)' },
+          '100%': { opacity: '0.4', transform: 'rotate(-12deg) translateX(10px) scaleX(1)' },
+        },
+        'runner-streak-3': {
+          '0%': { opacity: '0.2', transform: 'rotate(-12deg) translateX(32px)' },
+          '40%': { opacity: '0.5', transform: 'rotate(-12deg) translateX(-20px)' },
+          '100%': { opacity: '0.2', transform: 'rotate(-12deg) translateX(32px)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -291,6 +313,10 @@ const config: Config = {
         'cp-heartbeat': 'cp-heartbeat 2s ease-in-out infinite',
         'cp-flicker': 'cp-flicker 4s linear infinite',
         'cp-drift': 'cp-drift 12s ease-in-out infinite',
+        /* Corporate Glitch: Runner streak animations */
+        'runner-streak-1': 'runner-streak-1 2.5s ease-in-out infinite',
+        'runner-streak-2': 'runner-streak-2 3.5s ease-in-out infinite 0.5s',
+        'runner-streak-3': 'runner-streak-3 4s ease-in-out infinite 1s',
       },
       backgroundImage: {
         'sunset-gradient': 'linear-gradient(180deg, #00ff9d 0%, #00d4ff 15%, #7b61ff 35%, #1a0044 55%, #050a14 100%)',
@@ -299,6 +325,8 @@ const config: Config = {
         /* Legacy */
         'brand-gradient': 'linear-gradient(135deg, #00ff9d 0%, #00d4ff 50%, #7b61ff 100%)',
         'brand-gradient-subtle': 'linear-gradient(135deg, rgba(0,255,157,0.1) 0%, rgba(0,212,255,0.1) 50%, rgba(123,97,255,0.1) 100%)',
+        'exec-gold-gradient': 'linear-gradient(to right, #FDB931, #FFD700)',
+        'grid-pattern': 'linear-gradient(to right, #1a1a1a 1px, transparent 1px), linear-gradient(to bottom, #1a1a1a 1px, transparent 1px)',
       },
     },
   },

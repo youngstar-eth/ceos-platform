@@ -56,8 +56,24 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  webpack: (config) => {
+  // Coinbase AgentKit + CDP SDK use native Node crypto and ESM-only deps
+  // that webpack struggles to bundle.  Keep them external on the server.
+  serverExternalPackages: [
+    '@coinbase/agentkit',
+    '@coinbase/cdp-sdk',
+    '@coinbase/coinbase-sdk',
+    '@coinbase/agentkit-langchain',
+    '@langchain/core',
+    '@langchain/langgraph',
+  ],
+  webpack: (config, { isServer }) => {
     config.resolve.fallback = { fs: false, net: false, tls: false };
+
+    // pino-pretty is an optional dependency of pino used by WalletConnect internals.
+    // It's not needed at runtime in the browser, so we externalize it to avoid build errors.
+    if (!isServer) {
+      config.externals = [...(config.externals || []), 'pino-pretty'];
+    }
     return config;
   },
 };

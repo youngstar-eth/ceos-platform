@@ -8,62 +8,98 @@ import { RevenuePool } from "../src/RevenuePool.sol";
 import { CreatorScore } from "../src/CreatorScore.sol";
 import { ERC8004TrustRegistry } from "../src/ERC8004TrustRegistry.sol";
 import { X402PaymentGate } from "../src/X402PaymentGate.sol";
+import { FeeSplitter } from "../src/FeeSplitter.sol";
+import { RunToken } from "../src/RunToken.sol";
 import { IAgentRegistry } from "../src/interfaces/IAgentRegistry.sol";
 import { ICreatorScore } from "../src/interfaces/ICreatorScore.sol";
 import { MockERC20 } from "./mocks/MockERC20.sol";
+import { MockWETH } from "./mocks/MockWETH.sol";
+import { MockSwapRouter } from "./mocks/MockSwapRouter.sol";
+import { MockVirtualsFactory } from "./mocks/MockVirtualsFactory.sol";
 
 /// @title IntegrationTest
-/// @notice Full lifecycle integration test for the OpenClaw protocol
+/// @notice Full lifecycle integration test for the ceos.run protocol
 /// @dev Tests: deploy factory -> deploy agent -> register -> generate scores ->
 ///      submit scores -> finalize epoch -> claim revenue
 contract IntegrationTest is Test {
+    // ── Canonical Base Addresses ──
+    address constant SWAP_ROUTER_ADDR = 0x2626664c2603336E57B271c5C0b26F421741e481;
+    address constant WETH_ADDR = 0x4200000000000000000000000000000000000006;
+
     AgentFactory public factory;
     AgentRegistry public registry;
     RevenuePool public revenuePool;
     CreatorScore public creatorScore;
     ERC8004TrustRegistry public trustRegistry;
     X402PaymentGate public paymentGate;
+    FeeSplitter public feeSplitter;
+    RunToken public runToken;
     MockERC20 public usdc;
+    MockVirtualsFactory public mockVirtualsFactory;
 
-    address public implementation;
     address public deployer;
-    address public treasury;
+    address public protocolFeeRecipient;
     address public creator1;
     address public creator2;
     address public payer;
 
     uint256 public constant DEPLOY_FEE = 0.005 ether;
 
+    /// @notice Accept ETH transfers
+    receive() external payable {}
+
     function setUp() public {
         deployer = address(this);
-        treasury = makeAddr("treasury");
+        protocolFeeRecipient = makeAddr("protocolFeeRecipient");
         creator1 = makeAddr("creator1");
         creator2 = makeAddr("creator2");
         payer = makeAddr("payer");
 
+        // Deploy mocks at canonical addresses
+        MockWETH mockWeth = new MockWETH();
+        vm.etch(WETH_ADDR, address(mockWeth).code);
+
+        MockSwapRouter mockRouter = new MockSwapRouter();
+        vm.etch(SWAP_ROUTER_ADDR, address(mockRouter).code);
+        MockSwapRouter(payable(SWAP_ROUTER_ADDR)).setExchangeRate(2);
+
         // Deploy mock USDC
         usdc = new MockERC20("USDC", "USDC", 6);
 
-        // Deploy all contracts
+        // Deploy RunToken and grant MINTER_ROLE to swap router
+        runToken = new RunToken(deployer);
+        runToken.grantRole(runToken.MINTER_ROLE(), SWAP_ROUTER_ADDR);
+
+        // Deploy FeeSplitter
+        feeSplitter = new FeeSplitter(
+            SWAP_ROUTER_ADDR,
+            address(runToken),
+            protocolFeeRecipient,
+            3000
+        );
+        feeSplitter.setAuthorizedDistributor(deployer, true);
+
+        // Deploy all other contracts
         trustRegistry = new ERC8004TrustRegistry();
         registry = new AgentRegistry(address(0));
         creatorScore = new CreatorScore(deployer);
         revenuePool = new RevenuePool(address(usdc), deployer);
         paymentGate = new X402PaymentGate(address(usdc), address(revenuePool));
-        implementation = address(new MinimalAgent());
+        mockVirtualsFactory = new MockVirtualsFactory();
 
+        // Deploy AgentFactory with Virtuals integration
         factory = new AgentFactory(
-            implementation,
+            address(mockVirtualsFactory),
             address(registry),
             address(trustRegistry),
-            address(revenuePool),
-            treasury
+            address(feeSplitter)
         );
 
         // Wire references
         registry.setFactory(address(factory));
         trustRegistry.setAuthorizedMinter(address(factory), true);
         paymentGate.setAuthorizedProcessor(deployer, true);
+        feeSplitter.setAuthorizedDistributor(address(factory), true);
     }
 
     /// @notice Full lifecycle: deploy -> scores -> claim
@@ -110,8 +146,7 @@ contract IntegrationTest is Test {
         // Route revenue to pool
         paymentGate.routeRevenue();
 
-        // Also add ETH revenue from deploy fees (already in pool from agent deploys)
-        // Add extra ETH revenue via deposit
+        // Add ETH revenue via deposit
         vm.deal(deployer, 1 ether);
         revenuePool.deposit{ value: 1 ether }();
 
@@ -257,9 +292,4 @@ contract IntegrationTest is Test {
         paymentGate.routeRevenue();
         assertEq(usdc.balanceOf(address(revenuePool)), 250e6, "RevenuePool should receive 250 USDC");
     }
-}
-
-/// @notice Minimal agent contract for integration testing
-contract MinimalAgent {
-    receive() external payable { }
 }

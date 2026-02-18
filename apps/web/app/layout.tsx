@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, Orbitron, Press_Start_2P, Rajdhani, Share_Tech_Mono } from 'next/font/google';
+import { Inter, Orbitron, Press_Start_2P, Rajdhani, Share_Tech_Mono, JetBrains_Mono, Unbounded } from 'next/font/google';
 import { Providers } from './providers';
 import './globals.css';
 
@@ -34,6 +34,19 @@ const shareTechMono = Share_Tech_Mono({
   subsets: ['latin'],
   variable: '--font-share-tech',
   weight: '400',
+  display: 'swap',
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-mono',
+  display: 'swap',
+});
+
+const unbounded = Unbounded({
+  subsets: ['latin'],
+  variable: '--font-unbounded',
+  weight: ['200', '300', '400', '500', '600', '700', '800', '900'],
   display: 'swap',
 });
 
@@ -91,7 +104,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body
-        className={`${inter.variable} ${orbitron.variable} ${pressStart.variable} ${rajdhani.variable} ${shareTechMono.variable} font-sans antialiased min-h-screen bg-background text-foreground`}
+        className={`${inter.variable} ${orbitron.variable} ${pressStart.variable} ${rajdhani.variable} ${shareTechMono.variable} ${jetbrainsMono.variable} ${unbounded.variable} font-sans antialiased min-h-screen bg-background text-foreground`}
       >
         <Providers>{children}</Providers>
       </body>

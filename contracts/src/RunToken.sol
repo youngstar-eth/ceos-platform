@@ -35,7 +35,7 @@ contract RunToken is IRunToken, ERC20, ERC20Burnable, AccessControl {
     /// @dev Grants DEFAULT_ADMIN_ROLE to the deployer. No tokens are minted at construction.
     ///      The admin should grant MINTER_ROLE to the StakingRewards contract after deployment.
     /// @param initialAdmin The address receiving DEFAULT_ADMIN_ROLE (manages minter permissions)
-    constructor(address initialAdmin) ERC20("RUN", "RUN") {
+    constructor(address initialAdmin) ERC20("CEOS.RUN Governance", "RUN") {
         if (initialAdmin == address(0)) revert ZeroAddress();
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
     }

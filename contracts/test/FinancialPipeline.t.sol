@@ -3,20 +3,23 @@ pragma solidity 0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { FeeSplitter } from "../src/FeeSplitter.sol";
-import { ScoutFund } from "../src/ScoutFund.sol";
-import { AgentTreasury } from "../src/AgentTreasury.sol";
+import { RunToken } from "../src/RunToken.sol";
+import { AgentFactory } from "../src/AgentFactory.sol";
+import { AgentRegistry } from "../src/AgentRegistry.sol";
+import { ERC8004TrustRegistry } from "../src/ERC8004TrustRegistry.sol";
 import { IFeeSplitter } from "../src/interfaces/IFeeSplitter.sol";
-import { IScoutFund } from "../src/interfaces/IScoutFund.sol";
-import { IAgentTreasury } from "../src/interfaces/IAgentTreasury.sol";
+import { IAgentFactory } from "../src/interfaces/IAgentFactory.sol";
 import { MockERC20 } from "./mocks/MockERC20.sol";
 import { MockWETH } from "./mocks/MockWETH.sol";
 import { MockSwapRouter } from "./mocks/MockSwapRouter.sol";
+import { MockVirtualsFactory } from "./mocks/MockVirtualsFactory.sol";
 
 /// @title FinancialPipelineTest
 /// @notice Integration test proving the v2 financial engine works end-to-end:
-///         Fees → FeeSplitter (40/40/20) → ScoutFund pull → Invest via Uniswap V3
+///         AgentFactory deploy fee → FeeSplitter (40/40/20) →
+///         Atomic $RUN buyback-and-burn + pull-pattern claims
 /// @dev Uses vm.etch() to deploy mocks at canonical Base addresses so hardcoded
-///      constants in ScoutFund and AgentTreasury resolve to our mocks.
+///      constants in FeeSplitter (WETH) resolve to our mocks.
 contract FinancialPipelineTest is Test {
     // ── Canonical Base Addresses (hardcoded in production contracts) ──
     address constant SWAP_ROUTER_ADDR = 0x2626664c2603336E57B271c5C0b26F421741e481;
@@ -24,508 +27,438 @@ contract FinancialPipelineTest is Test {
 
     // ── Contracts Under Test ──
     FeeSplitter public feeSplitter;
-    ScoutFund public scoutFund;
-    AgentTreasury public treasuryImpl;
+    RunToken public runToken;
+    AgentFactory public agentFactory;
+    AgentRegistry public agentRegistry;
+    ERC8004TrustRegistry public trustRegistry;
 
     // ── Mocks ──
-    MockERC20 public usdc;
-    MockERC20 public agentToken;
     MockWETH public mockWeth;
     MockSwapRouter public mockRouter;
+    MockVirtualsFactory public mockVirtualsFactory;
 
     // ── Actors ──
     address public deployer;
-    address public protocolTreasury;
-    address public scoutWorker;
-    address public agentTreasuryAddr;
-    address public controller;
+    address public protocolFeeRecipient;
+    address public agentTreasury;
     address public creator;
 
     // ── Constants ──
     uint256 constant FEE_AMOUNT = 10 ether;
-    uint256 constant USDC_FEE_AMOUNT = 10_000e6; // 10,000 USDC
+    uint256 constant DEPLOY_FEE = 0.005 ether;
+    uint24 constant POOL_FEE = 3000; // 0.30% Uniswap fee tier
 
-    /// @notice Accept ETH transfers (test contract is the owner of ScoutFund and receives emergencyWithdraw)
+    /// @notice Accept ETH transfers (test contract acts as owner)
     receive() external payable {}
 
     function setUp() public {
         deployer = address(this);
-        protocolTreasury = makeAddr("protocolTreasury");
-        scoutWorker = makeAddr("scoutWorker");
-        controller = makeAddr("controller");
+        protocolFeeRecipient = makeAddr("protocolFeeRecipient");
+        agentTreasury = makeAddr("agentTreasury");
         creator = makeAddr("creator");
 
         // ── Step 1: Deploy mocks at canonical addresses ──
-        // Deploy MockWETH and copy bytecode to the canonical WETH9 address
+        // MockWETH at canonical WETH9 address on Base
         mockWeth = new MockWETH();
         vm.etch(WETH_ADDR, address(mockWeth).code);
-        // Re-point to the canonical address for test interactions
         mockWeth = MockWETH(payable(WETH_ADDR));
 
-        // Deploy MockSwapRouter and copy bytecode to canonical SwapRouter02 address
+        // MockSwapRouter at canonical SwapRouter02 address on Base
         mockRouter = new MockSwapRouter();
         vm.etch(SWAP_ROUTER_ADDR, address(mockRouter).code);
         mockRouter = MockSwapRouter(payable(SWAP_ROUTER_ADDR));
-        // vm.etch copies code but NOT storage — re-initialize the exchange rate
+        // vm.etch copies code but NOT storage — re-initialize exchange rate
         mockRouter.setExchangeRate(2);
 
-        // Deploy mock tokens
-        usdc = new MockERC20("USD Coin", "USDC", 6);
-        agentToken = new MockERC20("Agent Token", "AGENT", 18);
+        // ── Step 2: Deploy RunToken ──
+        // deployer gets DEFAULT_ADMIN_ROLE
+        runToken = new RunToken(deployer);
+        // Grant MINTER_ROLE to MockSwapRouter so it can mint $RUN during simulated swaps
+        runToken.grantRole(runToken.MINTER_ROLE(), SWAP_ROUTER_ADDR);
 
-        // ── Step 2: Deploy FeeSplitter ──
-        // We need the ScoutFund address before deploying FeeSplitter, but ScoutFund
-        // needs FeeSplitter in its constructor. Use CREATE2 prediction or deploy in order.
-        // Solution: Deploy ScoutFund first with a temporary FeeSplitter address, then update.
-        // Actually, ScoutFund stores feeSplitter as immutable, so we must know FeeSplitter addr.
-        // Use vm.computeCreateAddress to predict FeeSplitter's address.
-        //
-        // Simpler approach: Deploy FeeSplitter with a temporary scoutFund, then deploy ScoutFund,
-        // then update FeeSplitter's scoutFund address via setScoutFund().
-
-        // Deploy with a temporary scoutFund placeholder
+        // ── Step 3: Deploy FeeSplitter with all dependencies ──
         feeSplitter = new FeeSplitter(
-            protocolTreasury,
-            address(1), // temporary placeholder for scoutFund
-            address(usdc)
+            SWAP_ROUTER_ADDR,
+            address(runToken),
+            protocolFeeRecipient,
+            POOL_FEE
         );
 
-        // ── Step 3: Deploy ScoutFund (needs feeSplitter address) ──
-        scoutFund = new ScoutFund(
-            address(feeSplitter),
-            address(usdc)
-        );
-
-        // Update FeeSplitter to point to real ScoutFund
-        feeSplitter.setScoutFund(address(scoutFund));
-
-        // ── Step 4: Configure access control ──
         // Authorize deployer as distributor on FeeSplitter
         feeSplitter.setAuthorizedDistributor(deployer, true);
 
-        // Authorize scout worker on ScoutFund
-        scoutFund.setScoutWorker(scoutWorker, true);
+        // ── Step 4: Deploy supporting contracts for AgentFactory ──
+        mockVirtualsFactory = new MockVirtualsFactory();
+        trustRegistry = new ERC8004TrustRegistry();
+        agentRegistry = new AgentRegistry(address(0)); // placeholder factory
 
-        // Whitelist the agent token for investment
-        scoutFund.setScoutableToken(address(agentToken), true);
+        // Deploy AgentFactory
+        agentFactory = new AgentFactory(
+            address(mockVirtualsFactory),
+            address(agentRegistry),
+            address(trustRegistry),
+            address(feeSplitter)
+        );
 
-        // ── Step 5: Create a mock AgentTreasury (uses an address that can receive ETH) ──
-        agentTreasuryAddr = makeAddr("agentTreasury");
-        vm.deal(agentTreasuryAddr, 0);
+        // Wire cross-references
+        agentRegistry.setFactory(address(agentFactory));
+        trustRegistry.setAuthorizedMinter(address(agentFactory), true);
+
+        // Authorize AgentFactory as a distributor on FeeSplitter
+        feeSplitter.setAuthorizedDistributor(address(agentFactory), true);
+
+        // Fund test actors
+        vm.deal(creator, 100 ether);
+        vm.deal(agentTreasury, 0);
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  HAPPY PATH: Full ETH Financial Pipeline
+    //  DEPLOYMENT: AgentFactory → FeeSplitter Fee Forward
     // ════════════════════════════════════════════════════════════════════
 
-    /// @notice End-to-end test: 10 ETH fees → 40/40/20 split → ScoutFund pulls 2 ETH → invests
-    function test_fullETHPipeline() public {
-        // ── Step 1: Ingest — Send 10 ETH to FeeSplitter as protocol fees ──
-        feeSplitter.distributeFees{ value: FEE_AMOUNT }(agentTreasuryAddr);
+    /// @notice Test that AgentFactory.deployAgent forwards fee to FeeSplitter
+    function test_deployAgent_forwardsFeeToFeeSplitter() public {
+        uint256 splitterBalBefore = address(feeSplitter).balance;
 
-        // Verify allocation was recorded
+        vm.prank(creator);
+        address agent = agentFactory.deployAgent{ value: DEPLOY_FEE }(
+            "TestAgent", "TA", "ipfs://metadata"
+        );
+
+        // Agent address should be valid (from MockVirtualsFactory)
+        assertTrue(agent != address(0), "Agent address should not be zero");
+
+        // FeeSplitter should have received the deploy fee
+        assertEq(
+            address(feeSplitter).balance - splitterBalBefore,
+            DEPLOY_FEE,
+            "FeeSplitter should receive the full deploy fee"
+        );
+
+        // Verify agent tracking
+        assertEq(agentFactory.getAgentCount(creator), 1, "Creator should have 1 agent");
+        assertEq(agentFactory.getVirtualsToken(agent), agent, "Virtuals token should map to agent");
+    }
+
+    /// @notice Test that AgentDeployed event includes indexed virtualsToken
+    function test_deployAgent_emitsAgentDeployedEvent() public {
+        // We expect the 3rd event from the factory call (after registry + trust events)
+        vm.prank(creator);
+        address agent = agentFactory.deployAgent{ value: DEPLOY_FEE }(
+            "EventAgent", "EA", "ipfs://event-meta"
+        );
+
+        // Verify the Virtuals token mapping (indirect event verification)
+        assertTrue(agent != address(0), "Agent should be deployed");
+        assertEq(agentFactory.getVirtualsToken(agent), agent, "Token should be self-referential");
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  BUYBACK & BURN: Core Loop
+    // ════════════════════════════════════════════════════════════════════
+
+    /// @notice End-to-end: 10 ETH → distribute → 40% buyback+burn, 40% agent, 20% protocol
+    function test_distribute_buybackAndBurn() public {
+        uint256 runSupplyBefore = runToken.totalSupply();
+
+        // Distribute 10 ETH through FeeSplitter
+        feeSplitter.distribute{ value: FEE_AMOUNT }(agentTreasury, 0);
+
+        // ── Verify MockSwapRouter was called ──
+        assertEq(mockRouter.swapCount(), 1, "SwapRouter should be called once");
+        assertEq(mockRouter.lastTokenIn(), WETH_ADDR, "tokenIn should be WETH");
+        assertEq(mockRouter.lastTokenOut(), address(runToken), "tokenOut should be $RUN");
+
+        // 40% of 10 ETH = 4 ETH for buyback
+        uint256 expectedBuybackAmount = (FEE_AMOUNT * 4_000) / 10_000;
+        assertEq(mockRouter.lastAmountIn(), expectedBuybackAmount, "amountIn should be 40% of total");
+        assertEq(mockRouter.lastRecipient(), address(feeSplitter), "recipient should be FeeSplitter");
+
+        // ── Verify $RUN was burned ──
+        // MockSwapRouter mints 2x the input, so 4 ETH → 8 $RUN minted then burned
+        uint256 expectedRunBurned = expectedBuybackAmount * 2; // 2x exchange rate
+        assertEq(runToken.totalSupply(), runSupplyBefore, "Net supply should be unchanged (minted then burned)");
+        assertEq(feeSplitter.totalRunBurned(), expectedRunBurned, "totalRunBurned should track burned amount");
+
+        // ── Verify pull-pattern balances ──
+        // Agent treasury: 40% = 4 ETH
+        uint256 agentClaimable = feeSplitter.getClaimable(agentTreasury);
+        uint256 expectedAgent = FEE_AMOUNT - expectedBuybackAmount - (FEE_AMOUNT * 2_000) / 10_000;
+        assertEq(agentClaimable, expectedAgent, "Agent treasury should have 40% allocated");
+
+        // Protocol fee: 20% = 2 ETH
+        uint256 protocolClaimable = feeSplitter.getClaimable(protocolFeeRecipient);
+        uint256 expectedProtocol = (FEE_AMOUNT * 2_000) / 10_000;
+        assertEq(protocolClaimable, expectedProtocol, "Protocol should have 20% allocated");
+
+        // Distribution counter
         assertEq(feeSplitter.getDistributionCount(), 1, "Should have 1 distribution");
+    }
 
-        // ── Step 2: Verify 40/40/20 split allocations ──
-        // ScoutFund should have 20% = 2 ETH allocated
-        (uint256 scoutETH,) = feeSplitter.getClaimable(address(scoutFund));
-        assertEq(scoutETH, 2 ether, "ScoutFund should have 2 ETH allocated (20%)");
+    /// @notice Verify explicit split amounts: 40/40/20 of 10 ETH = 4/4/2
+    function test_distribute_exactSplitAmounts() public {
+        feeSplitter.distribute{ value: FEE_AMOUNT }(agentTreasury, 0);
 
-        // Protocol treasury should have 40% = 4 ETH allocated
-        (uint256 buybackETH,) = feeSplitter.getClaimable(protocolTreasury);
-        assertEq(buybackETH, 4 ether, "ProtocolTreasury should have 4 ETH allocated (40%)");
+        uint256 agentClaimable = feeSplitter.getClaimable(agentTreasury);
+        uint256 protocolClaimable = feeSplitter.getClaimable(protocolFeeRecipient);
 
-        // Agent treasury should have 40% = 4 ETH allocated (gets remainder for rounding)
-        (uint256 growthETH,) = feeSplitter.getClaimable(agentTreasuryAddr);
-        assertEq(growthETH, 4 ether, "AgentTreasury should have 4 ETH allocated (40%)");
+        assertEq(agentClaimable, 4 ether, "Agent treasury should get exactly 4 ETH (40%)");
+        assertEq(protocolClaimable, 2 ether, "Protocol should get exactly 2 ETH (20%)");
 
-        // Total allocated should equal total input
-        assertEq(scoutETH + buybackETH + growthETH, FEE_AMOUNT, "Total allocation should equal input");
-
-        // ── Step 3: Pull — ScoutFund claims its share from FeeSplitter ──
-        uint256 scoutBalBefore = address(scoutFund).balance;
-        scoutFund.claimFundingETH();
-        uint256 scoutBalAfter = address(scoutFund).balance;
-
-        assertEq(scoutBalAfter - scoutBalBefore, 2 ether, "ScoutFund should receive 2 ETH");
-
-        // Verify FeeSplitter allocation is now zero
-        (uint256 scoutETHAfter,) = feeSplitter.getClaimable(address(scoutFund));
-        assertEq(scoutETHAfter, 0, "ScoutFund claimable should be 0 after claim");
-
-        // ── Step 4: Invest — ScoutFund invests 1 ETH into agent token via Uniswap ──
-        uint256 investAmount = 1 ether;
-
-        vm.prank(scoutWorker);
-        uint256 tokensAcquired = scoutFund.invest(
-            address(agentToken), // agentToken to buy
-            WETH_ADDR,           // pay with WETH (auto-wraps from ETH)
-            investAmount,        // invest 1 ETH
-            3000,                // 0.3% fee tier
-            0                    // no minimum (mock always succeeds)
-        );
-
-        // Verify swap executed: MockSwapRouter uses 2x exchange rate
-        assertEq(tokensAcquired, investAmount * 2, "Should receive 2x agent tokens (mock rate)");
-
-        // Verify ScoutFund holds the agent tokens
-        assertEq(agentToken.balanceOf(address(scoutFund)), investAmount * 2, "ScoutFund should hold agent tokens");
-
-        // Verify position tracking
-        IScoutFund.Position memory pos = scoutFund.getPosition(address(agentToken));
-        assertEq(pos.token, address(agentToken), "Position token should match");
-        assertEq(pos.totalInvested, investAmount, "Position totalInvested should be 1 ETH");
-        assertEq(pos.totalTokensAcquired, investAmount * 2, "Position totalTokensAcquired should be 2x");
-        assertEq(pos.investmentCount, 1, "Position investmentCount should be 1");
-        assertTrue(pos.firstInvestedAt > 0, "firstInvestedAt should be set");
-        assertEq(pos.firstInvestedAt, pos.lastInvestedAt, "First and last should match on single invest");
-
-        // Verify ScoutFund's remaining ETH balance (had 2 ETH, invested 1)
-        assertEq(address(scoutFund).balance, 1 ether, "ScoutFund should have 1 ETH remaining");
-
-        // Verify portfolio view
-        assertEq(scoutFund.getPositionCount(), 1, "Should have 1 position");
-        IScoutFund.HoldingSummary[] memory holdings = scoutFund.getFundHoldings();
-        assertEq(holdings.length, 1, "Holdings array should have 1 entry");
-        assertEq(holdings[0].token, address(agentToken), "Holdings token should match");
-        assertEq(holdings[0].currentBalance, investAmount * 2, "Holdings balance should match");
+        // Buyback consumed 4 ETH (40%), which was wrapped to WETH and swapped
+        // Total: 4 + 4 + 2 = 10 ETH ✓
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  USDC Pipeline
+    //  CLAIMS: Pull Pattern
     // ════════════════════════════════════════════════════════════════════
 
-    /// @notice Test USDC pipeline: distribute USDC fees → ScoutFund claims USDC
-    function test_USDCDistributionAndClaim() public {
-        // Mint USDC to deployer and approve FeeSplitter
-        usdc.mint(deployer, USDC_FEE_AMOUNT);
-        usdc.approve(address(feeSplitter), USDC_FEE_AMOUNT);
+    /// @notice Test that agent treasury can claim its ETH share
+    function test_claimETH_agentTreasury() public {
+        feeSplitter.distribute{ value: FEE_AMOUNT }(agentTreasury, 0);
 
-        // Distribute USDC fees
-        feeSplitter.distributeUSDCFees(agentTreasuryAddr, USDC_FEE_AMOUNT);
+        uint256 balBefore = agentTreasury.balance;
 
-        // Verify USDC allocations
-        (, uint256 scoutUSDC) = feeSplitter.getClaimable(address(scoutFund));
-        assertEq(scoutUSDC, 2_000e6, "ScoutFund should have 2,000 USDC allocated (20%)");
+        vm.prank(agentTreasury);
+        feeSplitter.claimETH();
 
-        (, uint256 buybackUSDC) = feeSplitter.getClaimable(protocolTreasury);
-        assertEq(buybackUSDC, 4_000e6, "ProtocolTreasury should have 4,000 USDC (40%)");
+        assertEq(agentTreasury.balance - balBefore, 4 ether, "Agent treasury should receive 4 ETH");
+        assertEq(feeSplitter.getClaimable(agentTreasury), 0, "Claimable should be 0 after claim");
+    }
 
-        (, uint256 growthUSDC) = feeSplitter.getClaimable(agentTreasuryAddr);
-        assertEq(growthUSDC, 4_000e6, "AgentTreasury should have 4,000 USDC (40%)");
+    /// @notice Test that protocol fee recipient can claim its ETH share
+    function test_claimETH_protocolFee() public {
+        feeSplitter.distribute{ value: FEE_AMOUNT }(agentTreasury, 0);
 
-        // ScoutFund claims USDC
-        scoutFund.claimFundingUSDC();
+        uint256 balBefore = protocolFeeRecipient.balance;
 
-        assertEq(usdc.balanceOf(address(scoutFund)), 2_000e6, "ScoutFund should hold 2,000 USDC");
+        vm.prank(protocolFeeRecipient);
+        feeSplitter.claimETH();
 
-        (, uint256 scoutUSDCAfter) = feeSplitter.getClaimable(address(scoutFund));
-        assertEq(scoutUSDCAfter, 0, "ScoutFund USDC claimable should be 0 after claim");
+        assertEq(protocolFeeRecipient.balance - balBefore, 2 ether, "Protocol should receive 2 ETH");
+        assertEq(feeSplitter.getClaimable(protocolFeeRecipient), 0, "Claimable should be 0 after claim");
+    }
+
+    /// @notice Test that claiming with zero balance reverts
+    function test_claimETH_revertsWhenNothingToClaim() public {
+        address nobody = makeAddr("nobody");
+        vm.prank(nobody);
+        vm.expectRevert(IFeeSplitter.NothingToClaim.selector);
+        feeSplitter.claimETH();
+    }
+
+    /// @notice Test double claim reverts on second attempt
+    function test_claimETH_doubleClaimReverts() public {
+        feeSplitter.distribute{ value: FEE_AMOUNT }(agentTreasury, 0);
+
+        vm.prank(agentTreasury);
+        feeSplitter.claimETH();
+
+        // Second claim should revert
+        vm.prank(agentTreasury);
+        vm.expectRevert(IFeeSplitter.NothingToClaim.selector);
+        feeSplitter.claimETH();
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  Multiple Investment Rounds
+    //  ROUNDING: Dust goes to agent treasury (remainder pattern)
     // ════════════════════════════════════════════════════════════════════
 
-    /// @notice Test multiple investment rounds with position accumulation
-    function test_multipleInvestmentRounds() public {
-        // Fund ScoutFund with 5 ETH and raise cap (default is 1 ETH)
-        vm.deal(address(scoutFund), 5 ether);
-        scoutFund.setMaxInvestmentPerToken(10 ether);
+    /// @notice Test that rounding dust goes to agent treasury (never lost)
+    function test_roundingDust_goesToAgentTreasury() public {
+        // 33 wei: buyback = 33*4000/10000 = 13, protocol = 33*2000/10000 = 6, agent = 33-13-6 = 14
+        feeSplitter.distribute{ value: 33 }(agentTreasury, 0);
 
-        // Round 1: Invest 1 ETH
-        vm.prank(scoutWorker);
-        scoutFund.invest(address(agentToken), WETH_ADDR, 1 ether, 3000, 0);
+        uint256 agentClaimable = feeSplitter.getClaimable(agentTreasury);
+        uint256 protocolClaimable = feeSplitter.getClaimable(protocolFeeRecipient);
 
-        // Round 2: Invest 2 ETH
-        vm.warp(block.timestamp + 1 hours);
-        vm.prank(scoutWorker);
-        scoutFund.invest(address(agentToken), WETH_ADDR, 2 ether, 3000, 0);
+        // Agent gets remainder: 33 - 13 - 6 = 14 (absorbs the 1 wei rounding dust)
+        assertEq(protocolClaimable, 6, "Protocol should get 6 wei");
+        assertEq(agentClaimable, 14, "Agent treasury should get 14 wei (absorbs dust)");
 
-        // Verify accumulated position
-        IScoutFund.Position memory pos = scoutFund.getPosition(address(agentToken));
-        assertEq(pos.totalInvested, 3 ether, "Total invested should be 3 ETH");
-        assertEq(pos.totalTokensAcquired, 6 ether, "Total tokens should be 6 (3 ETH * 2x rate)");
-        assertEq(pos.investmentCount, 2, "Should have 2 investments");
-        assertTrue(pos.lastInvestedAt > pos.firstInvestedAt, "Last should be after first");
+        // Total accounted = buyback(13) + agent(14) + protocol(6) = 33
+        assertEq(13 + agentClaimable + protocolClaimable, 33, "No dust lost");
+    }
 
-        // Verify remaining balance (5 - 3 = 2 ETH)
-        assertEq(address(scoutFund).balance, 2 ether, "Should have 2 ETH remaining");
+    /// @notice Test 1 wei edge case
+    function test_roundingDust_singleWei() public {
+        // 1 wei: buyback = 0, protocol = 0, agent = 1
+        feeSplitter.distribute{ value: 1 }(agentTreasury, 0);
+
+        uint256 agentClaimable = feeSplitter.getClaimable(agentTreasury);
+        uint256 protocolClaimable = feeSplitter.getClaimable(protocolFeeRecipient);
+
+        assertEq(agentClaimable, 1, "Agent treasury should get the 1 wei");
+        assertEq(protocolClaimable, 0, "Protocol should get 0");
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  Concentration Limit Enforcement
+    //  ACCESS CONTROL
     // ════════════════════════════════════════════════════════════════════
 
-    /// @notice Test that per-token investment cap is enforced
-    function test_maxInvestmentPerToken() public {
-        // Default max is 1 ETH, fund ScoutFund with 5 ETH
-        vm.deal(address(scoutFund), 5 ether);
-
-        // First investment: 0.5 ETH — should succeed
-        vm.prank(scoutWorker);
-        scoutFund.invest(address(agentToken), WETH_ADDR, 0.5 ether, 3000, 0);
-
-        // Second investment: 0.6 ETH — would push total to 1.1 ETH, exceeding 1 ETH cap
-        vm.prank(scoutWorker);
-        vm.expectRevert(IScoutFund.MaxInvestmentExceeded.selector);
-        scoutFund.invest(address(agentToken), WETH_ADDR, 0.6 ether, 3000, 0);
-
-        // Exactly hitting the cap: 0.5 ETH — should succeed (total = 1.0 ETH)
-        vm.prank(scoutWorker);
-        scoutFund.invest(address(agentToken), WETH_ADDR, 0.5 ether, 3000, 0);
-
-        // Verify position
-        IScoutFund.Position memory pos = scoutFund.getPosition(address(agentToken));
-        assertEq(pos.totalInvested, 1 ether, "Total invested should be exactly 1 ETH (the cap)");
-
-        // Owner can raise the cap
-        scoutFund.setMaxInvestmentPerToken(5 ether);
-
-        // Now additional investment should succeed
-        vm.prank(scoutWorker);
-        scoutFund.invest(address(agentToken), WETH_ADDR, 2 ether, 3000, 0);
-
-        pos = scoutFund.getPosition(address(agentToken));
-        assertEq(pos.totalInvested, 3 ether, "Total invested should be 3 ETH after raising cap");
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  Whitelist Gate
-    // ════════════════════════════════════════════════════════════════════
-
-    /// @notice Test that non-whitelisted tokens are rejected
-    function test_investRejectsNonWhitelistedToken() public {
-        MockERC20 randomToken = new MockERC20("Random", "RND", 18);
-        vm.deal(address(scoutFund), 1 ether);
-
-        vm.prank(scoutWorker);
-        vm.expectRevert(IScoutFund.TokenNotScoutable.selector);
-        scoutFund.invest(address(randomToken), WETH_ADDR, 0.5 ether, 3000, 0);
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  Access Control
-    // ════════════════════════════════════════════════════════════════════
-
-    /// @notice Test that only authorized scout workers can invest
-    function test_investRejectsUnauthorizedCaller() public {
-        vm.deal(address(scoutFund), 1 ether);
-
+    /// @notice Test that unauthorized caller cannot distribute
+    function test_distribute_revertsForUnauthorized() public {
         address random = makeAddr("random");
+        vm.deal(random, 1 ether);
+
         vm.prank(random);
-        vm.expectRevert(IScoutFund.UnauthorizedScoutWorker.selector);
-        scoutFund.invest(address(agentToken), WETH_ADDR, 0.5 ether, 3000, 0);
+        vm.expectRevert(IFeeSplitter.UnauthorizedDistributor.selector);
+        feeSplitter.distribute{ value: 1 ether }(agentTreasury, 0);
     }
 
-    /// @notice Test that owner can always invest (owner bypass in modifier)
-    function test_ownerCanInvestDirectly() public {
-        vm.deal(address(scoutFund), 1 ether);
-
-        // Deployer is owner, should be able to invest without being a scout worker
-        scoutFund.invest(address(agentToken), WETH_ADDR, 0.5 ether, 3000, 0);
-
-        IScoutFund.Position memory pos = scoutFund.getPosition(address(agentToken));
-        assertEq(pos.totalInvested, 0.5 ether, "Owner should have invested successfully");
+    /// @notice Test that distributing with zero value reverts
+    function test_distribute_revertsWithZeroValue() public {
+        vm.expectRevert(IFeeSplitter.NoFeesToDistribute.selector);
+        feeSplitter.distribute{ value: 0 }(agentTreasury, 0);
     }
 
-    // ════════════════════════════════════════════════════════════════════
-    //  Divestment (Owner Only)
-    // ════════════════════════════════════════════════════════════════════
-
-    /// @notice Test that owner can divest (sell) agent tokens back to ETH
-    function test_ownerCanDivest() public {
-        // Fund and invest first
-        vm.deal(address(scoutFund), 2 ether);
-        scoutFund.invest(address(agentToken), WETH_ADDR, 1 ether, 3000, 0);
-
-        uint256 agentTokenBalance = agentToken.balanceOf(address(scoutFund));
-        assertEq(agentTokenBalance, 2 ether, "Should hold 2 agent tokens (1 ETH * 2x rate)");
-
-        // Divest 1 agent token back to WETH
-        // First, agentToken needs to approve SwapRouter (ScoutFund does this in divest())
-        uint256 divestAmount = 1 ether; // Sell 1 agent token
-        uint256 wethReceived = scoutFund.divest(
-            address(agentToken),
-            WETH_ADDR,
-            divestAmount,
-            3000,
-            0
-        );
-
-        assertEq(wethReceived, divestAmount * 2, "Should receive 2x WETH (mock rate)");
-
-        // Verify position tracking updated
-        IScoutFund.Position memory pos = scoutFund.getPosition(address(agentToken));
-        assertEq(pos.totalDivested, divestAmount, "totalDivested should reflect divested amount");
-    }
-
-    /// @notice Test that non-owner cannot divest
-    function test_divestRejectsNonOwner() public {
-        vm.deal(address(scoutFund), 1 ether);
-        scoutFund.invest(address(agentToken), WETH_ADDR, 0.5 ether, 3000, 0);
-
-        vm.prank(scoutWorker);
-        vm.expectRevert();
-        scoutFund.divest(address(agentToken), WETH_ADDR, 0.5 ether, 3000, 0);
+    /// @notice Test that distributing with zero agent treasury reverts
+    function test_distribute_revertsWithZeroAgentTreasury() public {
+        vm.expectRevert(IFeeSplitter.ZeroAddress.selector);
+        feeSplitter.distribute{ value: 1 ether }(address(0), 0);
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  Emergency Withdrawal
+    //  MULTIPLE DISTRIBUTIONS: Cumulative balances
     // ════════════════════════════════════════════════════════════════════
 
-    /// @notice Test emergency withdrawal recovers all assets
-    function test_emergencyWithdrawRecovery() public {
-        // Fund ScoutFund with ETH and invest
-        vm.deal(address(scoutFund), 3 ether);
-        scoutFund.invest(address(agentToken), WETH_ADDR, 1 ether, 3000, 0);
-
-        // Also mint some USDC to ScoutFund (simulating USDC claim)
-        usdc.mint(address(scoutFund), 1_000e6);
-
-        uint256 ownerBalBefore = deployer.balance;
-        uint256 ownerUsdcBefore = usdc.balanceOf(deployer);
-        uint256 ownerAgentBefore = agentToken.balanceOf(deployer);
-
-        scoutFund.emergencyWithdraw();
-
-        // Verify all assets transferred to owner
-        assertTrue(deployer.balance > ownerBalBefore, "Owner should receive ETH");
-        assertEq(usdc.balanceOf(deployer) - ownerUsdcBefore, 1_000e6, "Owner should receive USDC");
-        assertEq(agentToken.balanceOf(deployer) - ownerAgentBefore, 2 ether, "Owner should receive agent tokens");
-
-        // Verify ScoutFund is drained
-        assertEq(address(scoutFund).balance, 0, "ScoutFund ETH should be 0");
-        assertEq(usdc.balanceOf(address(scoutFund)), 0, "ScoutFund USDC should be 0");
-        assertEq(agentToken.balanceOf(address(scoutFund)), 0, "ScoutFund agent tokens should be 0");
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  Rounding Correctness
-    // ════════════════════════════════════════════════════════════════════
-
-    /// @notice Test that rounding dust goes to growth (never lost)
-    function test_roundingDustGoesToGrowth() public {
-        // Use an amount that doesn't divide evenly: 1 wei
-        // 1 * 2000 / 10000 = 0 (scout), 1 * 4000 / 10000 = 0 (buyback), remainder = 1 (growth)
-        feeSplitter.distributeFees{ value: 1 }(agentTreasuryAddr);
-
-        (uint256 growthETH,) = feeSplitter.getClaimable(agentTreasuryAddr);
-        (uint256 scoutETH,) = feeSplitter.getClaimable(address(scoutFund));
-        (uint256 buybackETH,) = feeSplitter.getClaimable(protocolTreasury);
-
-        // Growth should absorb the dust
-        assertEq(growthETH + scoutETH + buybackETH, 1, "Total should equal 1 wei (no dust lost)");
-        assertEq(growthETH, 1, "Growth should get the 1 wei (remainder)");
-
-        // Use a tricky amount: 33 wei
-        // Scout: 33 * 2000 / 10000 = 6 wei
-        // Buyback: 33 * 4000 / 10000 = 13 wei
-        // Growth: 33 - 6 - 13 = 14 wei (absorbs rounding dust)
-        feeSplitter.distributeFees{ value: 33 }(agentTreasuryAddr);
-
-        (uint256 g2,) = feeSplitter.getClaimable(agentTreasuryAddr);
-        (uint256 s2,) = feeSplitter.getClaimable(address(scoutFund));
-        (uint256 b2,) = feeSplitter.getClaimable(protocolTreasury);
-
-        assertEq(g2 + s2 + b2, 34, "Total should equal 34 wei (1 + 33, cumulative)");
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  Distribution Audit Trail
-    // ════════════════════════════════════════════════════════════════════
-
-    /// @notice Test that distribution records are stored correctly
-    function test_distributionAuditTrail() public {
-        feeSplitter.distributeFees{ value: 5 ether }(agentTreasuryAddr);
-        feeSplitter.distributeFees{ value: 3 ether }(agentTreasuryAddr);
+    /// @notice Test that multiple distributions accumulate claimable balances
+    function test_multipleDistributions_accumulateBalances() public {
+        feeSplitter.distribute{ value: 5 ether }(agentTreasury, 0);
+        feeSplitter.distribute{ value: 3 ether }(agentTreasury, 0);
 
         assertEq(feeSplitter.getDistributionCount(), 2, "Should have 2 distributions");
 
-        IFeeSplitter.DistributionRecord memory rec0 = feeSplitter.getDistribution(0);
-        assertEq(rec0.totalETH, 5 ether, "First distribution should be 5 ETH");
-        assertEq(rec0.agentTreasury, agentTreasuryAddr, "Should target agentTreasury");
-        assertEq(rec0.distributor, deployer, "Distributor should be deployer");
+        // Agent: 40% of 5 + 40% of 3 = 2 + 1.2 = 3.2 ETH
+        uint256 agentClaimable = feeSplitter.getClaimable(agentTreasury);
+        assertEq(agentClaimable, 3.2 ether, "Agent should have cumulative 3.2 ETH");
 
-        IFeeSplitter.DistributionRecord memory rec1 = feeSplitter.getDistribution(1);
-        assertEq(rec1.totalETH, 3 ether, "Second distribution should be 3 ETH");
+        // Protocol: 20% of 5 + 20% of 3 = 1 + 0.6 = 1.6 ETH
+        uint256 protocolClaimable = feeSplitter.getClaimable(protocolFeeRecipient);
+        assertEq(protocolClaimable, 1.6 ether, "Protocol should have cumulative 1.6 ETH");
+
+        // Total burned: 40% of 5 * 2x + 40% of 3 * 2x = 4 + 2.4 = 6.4 tokens
+        assertEq(feeSplitter.totalRunBurned(), 6.4 ether, "Total $RUN burned should be 6.4");
+    }
+
+    /// @notice Test different agent treasuries in separate distributions
+    function test_multipleDistributions_differentTreasuries() public {
+        address treasury1 = makeAddr("treasury1");
+        address treasury2 = makeAddr("treasury2");
+
+        feeSplitter.distribute{ value: 4 ether }(treasury1, 0);
+        feeSplitter.distribute{ value: 6 ether }(treasury2, 0);
+
+        assertEq(feeSplitter.getClaimable(treasury1), 1.6 ether, "Treasury1: 40% of 4 = 1.6 ETH");
+        assertEq(feeSplitter.getClaimable(treasury2), 2.4 ether, "Treasury2: 40% of 6 = 2.4 ETH");
+
+        // Protocol gets 20% of both
+        uint256 protocolTotal = feeSplitter.getClaimable(protocolFeeRecipient);
+        assertEq(protocolTotal, 2 ether, "Protocol: 20% of 4 + 20% of 6 = 2 ETH");
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  Whitelist Toggle
+    //  ADMIN: Configuration Changes
     // ════════════════════════════════════════════════════════════════════
 
-    /// @notice Test whitelist toggle: add → invest → remove → invest fails
-    function test_whitelistToggle() public {
-        MockERC20 newToken = new MockERC20("NewAgent", "NAGENT", 18);
-        vm.deal(address(scoutFund), 2 ether);
+    /// @notice Test that owner can update protocol fee recipient
+    function test_setProtocolFeeRecipient() public {
+        address newRecipient = makeAddr("newProtocol");
+        feeSplitter.setProtocolFeeRecipient(newRecipient);
+        assertEq(feeSplitter.protocolFeeRecipient(), newRecipient, "Recipient should be updated");
+    }
 
-        // Not whitelisted → invest should fail
-        vm.prank(scoutWorker);
-        vm.expectRevert(IScoutFund.TokenNotScoutable.selector);
-        scoutFund.invest(address(newToken), WETH_ADDR, 0.1 ether, 3000, 0);
+    /// @notice Test that setting zero address as protocol recipient reverts
+    function test_setProtocolFeeRecipient_revertsZeroAddress() public {
+        vm.expectRevert(IFeeSplitter.ZeroAddress.selector);
+        feeSplitter.setProtocolFeeRecipient(address(0));
+    }
 
-        // Whitelist → invest should succeed
-        scoutFund.setScoutableToken(address(newToken), true);
-        assertTrue(scoutFund.isScoutable(address(newToken)), "Token should be scoutable");
+    /// @notice Test that owner can update pool fee tier
+    function test_setPoolFee() public {
+        feeSplitter.setPoolFee(10_000); // 1.00% tier
+        assertEq(feeSplitter.poolFee(), 10_000, "Pool fee should be updated");
+    }
 
-        vm.prank(scoutWorker);
-        scoutFund.invest(address(newToken), WETH_ADDR, 0.1 ether, 3000, 0);
+    /// @notice Test that setting zero pool fee reverts
+    function test_setPoolFee_revertsZero() public {
+        vm.expectRevert(IFeeSplitter.InvalidPoolFee.selector);
+        feeSplitter.setPoolFee(0);
+    }
 
-        // Remove from whitelist → invest should fail again
-        scoutFund.setScoutableToken(address(newToken), false);
-        assertFalse(scoutFund.isScoutable(address(newToken)), "Token should not be scoutable");
+    /// @notice Test authorized distributor management
+    function test_setAuthorizedDistributor() public {
+        address newDistributor = makeAddr("newDistributor");
 
-        vm.prank(scoutWorker);
-        vm.expectRevert(IScoutFund.TokenNotScoutable.selector);
-        scoutFund.invest(address(newToken), WETH_ADDR, 0.1 ether, 3000, 0);
+        feeSplitter.setAuthorizedDistributor(newDistributor, true);
+        assertTrue(feeSplitter.authorizedDistributors(newDistributor), "Should be authorized");
+
+        feeSplitter.setAuthorizedDistributor(newDistributor, false);
+        assertFalse(feeSplitter.authorizedDistributors(newDistributor), "Should be deauthorized");
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  Insufficient Balance Protection
+    //  FULL PIPELINE: Deploy → Distribute → Claim
     // ════════════════════════════════════════════════════════════════════
 
-    /// @notice Test that investing more ETH than available reverts
-    function test_investInsufficientBalance() public {
-        vm.deal(address(scoutFund), 0.5 ether);
-
-        scoutFund.setMaxInvestmentPerToken(10 ether); // Raise cap so it's not the blocker
-
-        vm.prank(scoutWorker);
-        vm.expectRevert(IScoutFund.InsufficientBalance.selector);
-        scoutFund.invest(address(agentToken), WETH_ADDR, 1 ether, 3000, 0);
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  AgentTreasury Pull Pattern
-    // ════════════════════════════════════════════════════════════════════
-
-    /// @notice Test that an AgentTreasury clone can pull its 40% growth share
-    function test_agentTreasuryPullsGrowthShare() public {
-        // Deploy a real AgentTreasury (as clone would be)
-        treasuryImpl = new AgentTreasury();
-        treasuryImpl.initialize(
-            makeAddr("agent"),
-            creator,
-            controller,
-            address(feeSplitter),
-            address(agentToken)
+    /// @notice End-to-end: creator deploys agent → fee lands in FeeSplitter →
+    ///         authorized distributor splits it → recipients claim
+    function test_fullPipeline_deployToClaim() public {
+        // Step 1: Creator deploys agent (fee goes to FeeSplitter)
+        vm.prank(creator);
+        address agent = agentFactory.deployAgent{ value: DEPLOY_FEE }(
+            "PipelineAgent", "PA", "ipfs://pipeline"
         );
+        assertTrue(agent != address(0), "Agent should be deployed");
 
-        // Distribute fees with this treasury as the agent treasury
-        feeSplitter.distributeFees{ value: FEE_AMOUNT }(address(treasuryImpl));
+        // Step 2: FeeSplitter received the fee, now distribute it
+        uint256 splitterBalance = address(feeSplitter).balance;
+        assertEq(splitterBalance, DEPLOY_FEE, "FeeSplitter should hold the deploy fee");
 
-        // Verify allocation
-        (uint256 treasuryETH,) = feeSplitter.getClaimable(address(treasuryImpl));
-        assertEq(treasuryETH, 4 ether, "AgentTreasury should have 4 ETH allocated (40%)");
+        // Send ETH to FeeSplitter via distribute (simulating accumulated fees)
+        feeSplitter.distribute{ value: splitterBalance }(agentTreasury, 0);
 
-        // Treasury claims its growth share
-        treasuryImpl.claimGrowthETH();
+        // Step 3: Verify splits
+        // 40% of 0.005 ETH = 0.002 ETH for agent
+        uint256 agentClaimable = feeSplitter.getClaimable(agentTreasury);
+        uint256 protocolClaimable = feeSplitter.getClaimable(protocolFeeRecipient);
+        assertTrue(agentClaimable > 0, "Agent should have claimable ETH");
+        assertTrue(protocolClaimable > 0, "Protocol should have claimable ETH");
 
-        assertEq(address(treasuryImpl).balance, 4 ether, "AgentTreasury should hold 4 ETH");
+        // Step 4: Agent treasury claims
+        uint256 agentBalBefore = agentTreasury.balance;
+        vm.prank(agentTreasury);
+        feeSplitter.claimETH();
+        assertEq(agentTreasury.balance - agentBalBefore, agentClaimable, "Agent should receive exact claimable");
 
-        // Verify claim zeroed the balance
-        (uint256 treasuryETHAfter,) = feeSplitter.getClaimable(address(treasuryImpl));
-        assertEq(treasuryETHAfter, 0, "AgentTreasury claimable should be 0 after claim");
+        // Step 5: Protocol claims
+        uint256 protocolBalBefore = protocolFeeRecipient.balance;
+        vm.prank(protocolFeeRecipient);
+        feeSplitter.claimETH();
+        assertEq(
+            protocolFeeRecipient.balance - protocolBalBefore,
+            protocolClaimable,
+            "Protocol should receive exact claimable"
+        );
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  SLIPPAGE: minRunOut enforcement
+    // ════════════════════════════════════════════════════════════════════
+
+    /// @notice Test that excessive minRunOut causes revert (slippage protection)
+    function test_distribute_revertsOnExcessiveSlippage() public {
+        // MockSwapRouter with 2x rate: 4 ETH → 8 $RUN
+        // Setting minRunOut to 100 ETH should revert
+        vm.expectRevert("Too little received");
+        feeSplitter.distribute{ value: FEE_AMOUNT }(agentTreasury, 100 ether);
+    }
+
+    /// @notice Test that reasonable minRunOut passes
+    function test_distribute_passesWithReasonableSlippage() public {
+        // 40% of 10 ETH = 4 ETH, at 2x rate = 8 $RUN, so minRunOut = 8 should pass
+        feeSplitter.distribute{ value: FEE_AMOUNT }(agentTreasury, 8 ether);
+
+        assertEq(feeSplitter.getDistributionCount(), 1, "Distribution should succeed");
     }
 }

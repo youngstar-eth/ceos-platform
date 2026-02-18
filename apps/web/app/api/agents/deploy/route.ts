@@ -1,3 +1,6 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
@@ -167,8 +170,9 @@ async function handleDemoDeployment(body: unknown, address: string) {
   // === Awal Wallet Provisioning ===
   let walletResult: { walletId: string; address: string; email: string } | null = null;
   try {
-    const { provisionAgentWallet } = await import('@/lib/awal');
-    walletResult = await provisionAgentWallet(data.agentId, agent.name);
+    const { createWalletStore } = await import('@/lib/wallet-store');
+    const walletStore = createWalletStore();
+    walletResult = await walletStore.provisionWallet(data.agentId);
     logger.info({ agentId: data.agentId, walletAddress: walletResult.address }, 'Awal wallet provisioned');
   } catch (walletError) {
     // Wallet provisioning failure is non-fatal — agent can still operate without wallet
@@ -183,6 +187,7 @@ async function handleDemoDeployment(body: unknown, address: string) {
     data: {
       status: "ACTIVE",
       fid,
+      farcasterUsername: username,
       onChainAddress: custodyAddress,
       signerUuid,
       ...(generatedPfpUrl && { pfpUrl: generatedPfpUrl }),
@@ -514,8 +519,9 @@ async function handleProductionDeployment(body: unknown, address: string) {
   // Awal Wallet Provisioning
   let walletResult: { walletId: string; address: string; email: string } | null = null;
   try {
-    const { provisionAgentWallet } = await import('@/lib/awal');
-    walletResult = await provisionAgentWallet(data.agentId, agent.name);
+    const { createWalletStore } = await import('@/lib/wallet-store');
+    const walletStore = createWalletStore();
+    walletResult = await walletStore.provisionWallet(data.agentId);
     logger.info({ agentId: data.agentId, walletAddress: walletResult.address }, 'Awal wallet provisioned (production)');
   } catch (walletError) {
     logger.warn(

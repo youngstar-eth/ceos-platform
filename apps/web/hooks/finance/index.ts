@@ -21,9 +21,5 @@ export {
   useTreasuryETHBalance,
   useTreasuryTrackedBalances,
   useTreasuryBurnStats,
-  useScoutFundBalance,
-  useScoutFundPositionCount,
-  useScoutFundPosition,
-  useIsScoutable,
   useAgentFinancials,
 } from './use-agent-financials';

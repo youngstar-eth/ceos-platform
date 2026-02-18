@@ -38,7 +38,7 @@ contract RunTokenTest is Test {
     }
 
     function test_constructor_nameSymbolDecimals() public view {
-        assertEq(token.name(), "RUN");
+        assertEq(token.name(), "CEOS.RUN Governance");
         assertEq(token.symbol(), "RUN");
         assertEq(token.decimals(), 18);
     }

@@ -4,7 +4,6 @@ import { useReadContract } from 'wagmi';
 import { type Address } from 'viem';
 import {
   getAgentTreasuryContract,
-  getScoutFundContract,
 } from '@/lib/contracts';
 
 // ── Treasury Reads ───────────────────────────────────
@@ -55,59 +54,6 @@ export function useTreasuryBurnStats(treasuryAddress?: Address) {
     totalBurnedAmount: totalBurnedAmount as bigint | undefined,
     isLoading: burnsLoading || amountLoading,
   };
-}
-
-// ── ScoutFund Reads ──────────────────────────────────
-
-export function useScoutFundBalance() {
-  const contract = getScoutFundContract();
-
-  return useReadContract({
-    ...contract,
-    functionName: 'getETHBalance',
-    query: {
-      enabled: contract.address !== '0x',
-      refetchInterval: 60_000,
-    },
-  });
-}
-
-export function useScoutFundPositionCount() {
-  const contract = getScoutFundContract();
-
-  return useReadContract({
-    ...contract,
-    functionName: 'getPositionCount',
-    query: {
-      enabled: contract.address !== '0x',
-    },
-  });
-}
-
-export function useScoutFundPosition(agentToken?: Address) {
-  const contract = getScoutFundContract();
-
-  return useReadContract({
-    ...contract,
-    functionName: 'getPosition',
-    args: agentToken ? [agentToken] : undefined,
-    query: {
-      enabled: !!agentToken && contract.address !== '0x',
-    },
-  });
-}
-
-export function useIsScoutable(agentToken?: Address) {
-  const contract = getScoutFundContract();
-
-  return useReadContract({
-    ...contract,
-    functionName: 'isScoutable',
-    args: agentToken ? [agentToken] : undefined,
-    query: {
-      enabled: !!agentToken && contract.address !== '0x',
-    },
-  });
 }
 
 // ── Composite Hook ───────────────────────────────────

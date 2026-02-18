@@ -3,6 +3,7 @@
 import { Header } from '@/components/shared/header';
 import { Sidebar } from '@/components/shared/sidebar';
 import { ErrorBoundary } from '@/components/shared/error-boundary';
+import { DebugDeploy } from '@/components/debug-deploy';
 
 export default function DashboardLayout({
   children,
@@ -26,6 +27,9 @@ export default function DashboardLayout({
           </div>
         </main>
       </div>
+
+      {/* 🚨 DEBUG — Remove after testing */}
+      <DebugDeploy />
     </div>
   );
 }

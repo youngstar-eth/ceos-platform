@@ -23,6 +23,28 @@ export function paginatedResponse<T>(
   );
 }
 
+/** Fields that must NEVER be sent to the client. */
+const SENSITIVE_AGENT_FIELDS = [
+  'cdpWalletData',
+  'signerUuid',
+] as const;
+
+/**
+ * Strip sensitive fields from an agent (or array of agents) before responding.
+ * Works with plain agent objects and agents with relations (casts, identity, etc.).
+ */
+export function sanitizeAgent<T extends Record<string, unknown>>(agent: T): Omit<T, (typeof SENSITIVE_AGENT_FIELDS)[number]> {
+  const sanitized = { ...agent };
+  for (const field of SENSITIVE_AGENT_FIELDS) {
+    delete sanitized[field];
+  }
+  return sanitized;
+}
+
+export function sanitizeAgents<T extends Record<string, unknown>>(agents: T[]): Omit<T, (typeof SENSITIVE_AGENT_FIELDS)[number]>[] {
+  return agents.map(sanitizeAgent);
+}
+
 /**
  * Build an error JSON response from an AppError or unknown error.
  */

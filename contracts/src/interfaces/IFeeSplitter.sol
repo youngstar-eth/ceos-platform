@@ -2,72 +2,52 @@
 pragma solidity 0.8.24;
 
 /// @title IFeeSplitter
-/// @notice Interface for the protocol fee distribution contract (v2)
+/// @notice Interface for the hybrid fee distribution contract (Virtuals Protocol v2).
 /// @dev Routes protocol revenue using the 40/40/20 split:
-///      40% Agent Growth, 40% $RUN Buyback & Burn, 20% Scout Fund.
-///      Uses a two-phase pull pattern for failure isolation.
+///      40% $RUN buyback-and-burn (atomic, on-chain via Uniswap V3)
+///      40% Agent token treasury (pull pattern)
+///      20% Protocol fee (pull pattern)
 interface IFeeSplitter {
-    // ── Structs ────────────────────────────────────────────
-
-    /// @notice Tracks allocated but unclaimed shares for a recipient
-    /// @param ethAmount Accumulated ETH available to claim
-    /// @param usdcAmount Accumulated USDC available to claim
-    struct ClaimableBalance {
-        uint256 ethAmount;
-        uint256 usdcAmount;
-    }
-
-    /// @notice Snapshot of a single fee distribution event
-    /// @param distributor The address that initiated the distribution
-    /// @param agentTreasury The agent treasury that received the growth allocation
-    /// @param totalETH Total ETH distributed in this event
-    /// @param totalUSDC Total USDC distributed in this event
-    /// @param timestamp Block timestamp of the distribution
-    struct DistributionRecord {
-        address distributor;
-        address agentTreasury;
-        uint256 totalETH;
-        uint256 totalUSDC;
-        uint256 timestamp;
-    }
-
     // ── Events ─────────────────────────────────────────────
 
-    /// @notice Emitted when fees are allocated to the three recipient pools
-    /// @param distributionId Unique identifier for this distribution
-    /// @param agentTreasury The agent treasury receiving the growth share
-    /// @param growthETH ETH allocated to agent growth
-    /// @param buybackETH ETH allocated to $RUN buyback
-    /// @param scoutETH ETH allocated to scout fund
-    /// @param isUSDC Whether this was a USDC distribution (false = ETH)
-    event FeesAllocated(
+    /// @notice Emitted when fees are distributed across the three channels
+    /// @param distributionId Unique sequential ID for this distribution
+    /// @param agentTreasury The agent treasury receiving the 40% agent allocation
+    /// @param amountAgent ETH credited to agent treasury (claimable via pull)
+    /// @param amountBuyback ETH used for the $RUN buyback-and-burn swap
+    /// @param amountProtocol ETH credited to protocol fee recipient (claimable via pull)
+    event FeesDistributed(
         uint256 indexed distributionId,
         address indexed agentTreasury,
-        uint256 growthETH,
-        uint256 buybackETH,
-        uint256 scoutETH,
-        bool isUSDC
+        uint256 amountAgent,
+        uint256 amountBuyback,
+        uint256 amountProtocol
     );
 
-    /// @notice Emitted when a recipient claims their accumulated ETH balance
+    /// @notice Emitted when the $RUN buyback-and-burn swap executes successfully
+    /// @param distributionId The distribution ID this buyback belongs to
+    /// @param ethSpent The ETH amount swapped for $RUN
+    /// @param runBurned The $RUN amount received from Uniswap and burned
+    event BuybackExecuted(uint256 indexed distributionId, uint256 ethSpent, uint256 runBurned);
+
+    /// @notice Emitted when $RUN tokens are burned (granular burn tracking)
+    /// @param amount The $RUN amount burned in this transaction
+    event RunBurned(uint256 amount);
+
+    /// @notice Emitted when a recipient claims their accumulated ETH
     /// @param recipient The address that claimed
     /// @param amount The ETH amount claimed
     event ETHClaimed(address indexed recipient, uint256 amount);
 
-    /// @notice Emitted when a recipient claims their accumulated USDC balance
-    /// @param recipient The address that claimed
-    /// @param amount The USDC amount claimed
-    event USDCClaimed(address indexed recipient, uint256 amount);
+    /// @notice Emitted when the protocol fee recipient is updated
+    /// @param oldRecipient The previous protocol fee recipient
+    /// @param newRecipient The new protocol fee recipient
+    event ProtocolFeeRecipientUpdated(address oldRecipient, address newRecipient);
 
-    /// @notice Emitted when the protocol treasury (buyback) address is updated
-    /// @param oldTreasury The previous protocol treasury address
-    /// @param newTreasury The new protocol treasury address
-    event ProtocolTreasuryUpdated(address oldTreasury, address newTreasury);
-
-    /// @notice Emitted when the scout fund address is updated
-    /// @param oldFund The previous scout fund address
-    /// @param newFund The new scout fund address
-    event ScoutFundUpdated(address oldFund, address newFund);
+    /// @notice Emitted when the Uniswap pool fee tier is updated
+    /// @param oldFee The previous pool fee
+    /// @param newFee The new pool fee
+    event PoolFeeUpdated(uint24 oldFee, uint24 newFee);
 
     /// @notice Emitted when a distributor's authorization status changes
     /// @param distributor The distributor address
@@ -79,7 +59,7 @@ interface IFeeSplitter {
     /// @notice Thrown when attempting to distribute zero fees
     error NoFeesToDistribute();
 
-    /// @notice Thrown when a zero address is provided where one is not allowed
+    /// @notice Thrown when a zero address is provided where not allowed
     error ZeroAddress();
 
     /// @notice Thrown when an ETH transfer fails during claim
@@ -91,47 +71,33 @@ interface IFeeSplitter {
     /// @notice Thrown when attempting to claim with zero balance
     error NothingToClaim();
 
-    // ── Phase 1: Allocation ────────────────────────────────
+    /// @notice Thrown when an invalid pool fee is provided (zero)
+    error InvalidPoolFee();
 
-    /// @notice Allocate ETH fees into the three recipient pools (growth, buyback, scout)
-    /// @dev Phase 1 of the pull pattern. Calculates shares and updates claimable balances.
-    ///      The agent treasury receives 40% (growth), protocol treasury receives 40% (buyback),
-    ///      and scout fund receives 20%. Growth gets remainder to prevent rounding loss.
-    ///      Does NOT transfer funds — recipients must call claim functions.
-    /// @param agentTreasury The agent's treasury address to receive the 40% growth allocation
-    function distributeFees(address agentTreasury) external payable;
+    // ── Core: Distribution ─────────────────────────────────
 
-    /// @notice Allocate USDC fees into the three recipient pools (growth, buyback, scout)
-    /// @dev Phase 1 of the pull pattern for USDC. Transfers USDC from caller to this contract,
-    ///      then calculates and records claimable shares. Requires prior USDC approval.
-    /// @param agentTreasury The agent's treasury address to receive the 40% growth allocation
-    /// @param amount The total USDC amount to distribute (caller must have approved this contract)
-    function distributeUSDCFees(address agentTreasury, uint256 amount) external;
+    /// @notice Distribute ETH fees: atomic $RUN buyback-and-burn + pull-pattern allocations
+    /// @dev Performs the 40/40/20 split:
+    ///      - 40% buyback: ETH -> WETH -> Uniswap swap -> $RUN -> burn (atomic)
+    ///      - 40% agent: credited to agentTreasury (claimable via claimETH)
+    ///      - 20% protocol: credited to protocolFeeRecipient (claimable via claimETH)
+    ///      Agent treasury gets remainder after buyback + protocol to absorb rounding dust.
+    /// @param agentTreasury The agent's treasury address receiving the 40% growth allocation
+    /// @param minRunOut Minimum $RUN tokens to receive from the swap (slippage protection)
+    function distribute(address agentTreasury, uint256 minRunOut) external payable;
 
-    // ── Phase 2: Claims ────────────────────────────────────
+    // ── Claims ─────────────────────────────────────────────
 
     /// @notice Claim all accumulated ETH for the caller
-    /// @dev Phase 2 of the pull pattern. Uses checks-effects-interactions and ReentrancyGuard.
-    ///      Zeroes the balance before transferring to prevent reentrancy.
+    /// @dev Uses checks-effects-interactions: zeroes balance before transfer.
     function claimETH() external;
-
-    /// @notice Claim all accumulated USDC for the caller
-    /// @dev Phase 2 of the pull pattern. Uses SafeERC20 for the transfer.
-    ///      Zeroes the balance before transferring to prevent reentrancy.
-    function claimUSDC() external;
 
     // ── Views ──────────────────────────────────────────────
 
-    /// @notice Get the claimable ETH and USDC balances for a recipient
+    /// @notice Get the claimable ETH balance for a recipient
     /// @param recipient The address to check
     /// @return ethAmount The claimable ETH amount
-    /// @return usdcAmount The claimable USDC amount
-    function getClaimable(address recipient) external view returns (uint256 ethAmount, uint256 usdcAmount);
-
-    /// @notice Get details of a specific distribution event
-    /// @param distributionId The distribution event ID
-    /// @return record The distribution record
-    function getDistribution(uint256 distributionId) external view returns (DistributionRecord memory record);
+    function getClaimable(address recipient) external view returns (uint256 ethAmount);
 
     /// @notice Get the total number of distribution events
     /// @return The distribution count
@@ -139,13 +105,13 @@ interface IFeeSplitter {
 
     // ── Admin ──────────────────────────────────────────────
 
-    /// @notice Update the protocol treasury (buyback destination) address
-    /// @param newTreasury The new protocol treasury address
-    function setProtocolTreasury(address newTreasury) external;
+    /// @notice Update the protocol fee recipient address
+    /// @param newRecipient The new protocol fee recipient address
+    function setProtocolFeeRecipient(address newRecipient) external;
 
-    /// @notice Update the scout fund address
-    /// @param newScoutFund The new scout fund address
-    function setScoutFund(address newScoutFund) external;
+    /// @notice Update the Uniswap V3 pool fee tier
+    /// @param newFee The new pool fee (e.g., 3000 for 0.30%)
+    function setPoolFee(uint24 newFee) external;
 
     /// @notice Authorize or revoke a distributor address
     /// @param distributor The address to authorize or revoke

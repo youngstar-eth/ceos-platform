@@ -1,7 +1,10 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
-import { successResponse, paginatedResponse, errorResponse } from "@/lib/api-utils";
+import { successResponse, paginatedResponse, errorResponse, sanitizeAgents } from "@/lib/api-utils";
 import { verifyWalletSignature } from "@/lib/auth";
 import { publicLimiter, authenticatedLimiter, getClientIp } from "@/lib/rate-limit";
 import { listAgentsQuerySchema, createAgentSchema } from "@/lib/validation";
@@ -36,7 +39,7 @@ export async function GET(request: NextRequest) {
       prisma.agent.count({ where }),
     ]);
 
-    return paginatedResponse(agents, {
+    return paginatedResponse(sanitizeAgents(agents as unknown as Record<string, unknown>[]), {
       page: query.page,
       limit: query.limit,
       total,

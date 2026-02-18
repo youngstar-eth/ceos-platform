@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Rocket, Check } from 'lucide-react';
-import { useAccount, useSignMessage } from 'wagmi';
+import { ArrowLeft, ArrowRight, Rocket, Check, Wallet, Loader2 } from 'lucide-react';
+import { useAccount } from 'wagmi';
 import { Button } from '@/components/ui/button';
 import {
   AgentConfigForm,
@@ -11,7 +11,9 @@ import {
 } from '@/components/agent-builder/agent-config-form';
 import { ConfirmationCard } from './confirmation-card';
 import { TransactionStatus } from './transaction-status';
-import { useDeploy, type DeployStatus } from '@/hooks/use-deploy';
+import { useAgentDeploy } from '@/hooks/use-agent-deploy';
+import { type DeployStatus } from '@/hooks/use-deploy';
+import { syncDeployedAgent } from '@/app/actions/sync-agent';
 import { cn } from '@/lib/utils';
 
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
@@ -40,11 +42,23 @@ export function DeployWizard() {
   const [demoStatus, setDemoStatus] = useState<DeployStatus>('idle');
   const [demoError, setDemoError] = useState<string | null>(null);
   const [deployedAgentId, setDeployedAgentId] = useState<string | null>(null);
-  const [authCredentials, setAuthCredentials] = useState<{ message: string; signature: string } | null>(null);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'failed'>('idle');
+  const [syncError, setSyncError] = useState<string | null>(null);
 
-  const { deploy, status: onChainStatus, txHash, error: onChainError, reset } = useDeploy();
+  // ── On-chain deploy via useAgentDeploy (direct blockchain tx, no signMessage) ──
+  const {
+    deployAgent,
+    hash: txHash,
+    isWalletConfirming,
+    isMining,
+    isDeployed,
+    isFailed,
+    error: onChainError,
+    status: onChainStatus,
+    reset,
+  } = useAgentDeploy();
+
   const { address } = useAccount();
-  const { signMessageAsync } = useSignMessage();
   const router = useRouter();
 
   const status = DEMO_MODE ? demoStatus : onChainStatus;
@@ -65,6 +79,28 @@ export function DeployWizard() {
     }
   };
 
+  // ── Helper: build the API body from form config ──
+  const buildAgentPayload = () => ({
+    name: config.persona.name,
+    description: config.persona.description,
+    persona: {
+      tone: config.persona.personality || 'informative',
+      style: config.persona.traits.join(', ') || 'engaging',
+      topics: config.skills.length > 0 ? config.skills : ['general'],
+      language: 'en',
+      customPrompt: config.persona.personality,
+    },
+    skills: config.skills,
+    strategy: {
+      postingFrequency: config.strategy === 'media-heavy' ? 8 : config.strategy === 'text-heavy' ? 4 : 6,
+      engagementMode: 'active' as const,
+      trendTracking: true,
+      replyProbability: 0.3,
+      mediaGeneration: config.strategy !== 'text-heavy',
+    },
+  });
+
+  // ── Demo mode deploy (no blockchain) ──
   const handleDemoDeploy = async () => {
     if (!address) {
       setDemoError('Please connect your wallet first.');
@@ -75,41 +111,15 @@ export function DeployWizard() {
     try {
       setDemoError(null);
       setDemoStatus('preparing');
-
-      // In demo mode, skip wallet signature — use placeholder auth
-      const message = `demo-deploy:${config.persona.name}:${Date.now()}`;
-      const signature = 'demo-mode-signature';
-
       setDemoStatus('pending');
 
-      // Step 1: Create agent config in database
       const createRes = await fetch('/api/agents', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-wallet-address': address,
-          'x-wallet-signature': signature,
-          'x-wallet-message': message,
         },
-        body: JSON.stringify({
-          name: config.persona.name,
-          description: config.persona.description,
-          persona: {
-            tone: config.persona.personality || 'informative',
-            style: config.persona.traits.join(', ') || 'engaging',
-            topics: config.skills.length > 0 ? config.skills : ['general'],
-            language: 'en',
-            customPrompt: config.persona.personality,
-          },
-          skills: config.skills,
-          strategy: {
-            postingFrequency: config.strategy === 'media-heavy' ? 8 : config.strategy === 'text-heavy' ? 4 : 6,
-            engagementMode: 'active' as const,
-            trendTracking: true,
-            replyProbability: 0.3,
-            mediaGeneration: config.strategy !== 'text-heavy',
-          },
-        }),
+        body: JSON.stringify(buildAgentPayload()),
       });
 
       if (!createRes.ok) {
@@ -119,14 +129,11 @@ export function DeployWizard() {
 
       const { data: agent } = await createRes.json();
 
-      // Step 2: Deploy the agent (demo mode skips blockchain)
       const deployRes = await fetch('/api/agents/deploy', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-wallet-address': address,
-          'x-wallet-signature': signature,
-          'x-wallet-message': message,
         },
         body: JSON.stringify({ agentId: agent.id }),
       });
@@ -145,42 +152,21 @@ export function DeployWizard() {
     }
   };
 
+  // ── On-chain deploy: DB save → direct blockchain tx (NO signMessage) ──
   const handleOnChainDeploy = async () => {
     if (!address) return;
 
     try {
-      // Step 1: Sign a message with the wallet to authenticate
-      const message = `deploy:${config.persona.name}:${Date.now()}`;
-      const signature = await signMessageAsync({ message });
-      setAuthCredentials({ message, signature });
-
+      // Step 1: Save agent config to database
+      // The wallet address header is sufficient for auth — the on-chain tx
+      // receipt proves ownership when the backend is notified post-confirmation.
       const createRes = await fetch('/api/agents', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-wallet-address': address,
-          'x-wallet-signature': signature,
-          'x-wallet-message': message,
         },
-        body: JSON.stringify({
-          name: config.persona.name,
-          description: config.persona.description,
-          persona: {
-            tone: config.persona.personality || 'informative',
-            style: config.persona.traits.join(', ') || 'engaging',
-            topics: config.skills.length > 0 ? config.skills : ['general'],
-            language: 'en',
-            customPrompt: config.persona.personality,
-          },
-          skills: config.skills,
-          strategy: {
-            postingFrequency: config.strategy === 'media-heavy' ? 8 : config.strategy === 'text-heavy' ? 4 : 6,
-            engagementMode: 'active' as const,
-            trendTracking: true,
-            replyProbability: 0.3,
-            mediaGeneration: config.strategy !== 'text-heavy',
-          },
-        }),
+        body: JSON.stringify(buildAgentPayload()),
       });
 
       if (!createRes.ok) {
@@ -191,59 +177,108 @@ export function DeployWizard() {
       const { data: agent } = await createRes.json();
       setDeployedAgentId(agent.id);
 
-      // Step 2: Initiate blockchain transaction
-      await deploy({
-        name: config.persona.name,
-        metadataUri: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://ceos.run'}/api/metadata/${encodeURIComponent(config.persona.name)}`,
-      });
+      // Step 2: Fire the 0.005 ETH tx directly to AgentFactory.deployAgent()
+      // This is the ONLY wallet popup the user sees.
+      const symbol = config.persona.name.toUpperCase().replace(/\s+/g, '').slice(0, 5);
+      const metadataUri = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://ceos.run'}/api/metadata/${encodeURIComponent(config.persona.name)}`;
+
+      deployAgent(config.persona.name, symbol, metadataUri);
     } catch (err) {
-      // If DB create fails, the deploy hook error handling will show the error
       console.error('On-chain deploy preparation failed:', err);
     }
   };
 
-  // When on-chain tx is confirmed, notify the backend to activate the agent
+  // ── When on-chain tx is confirmed: sync to DB → notify backend → redirect ──
   const hasNotifiedBackend = useRef(false);
   useEffect(() => {
     if (
       !DEMO_MODE &&
-      onChainStatus === 'confirmed' &&
+      isDeployed &&
       txHash &&
-      deployedAgentId &&
-      authCredentials &&
       !hasNotifiedBackend.current
     ) {
       hasNotifiedBackend.current = true;
 
-      const notifyBackend = async () => {
+      const syncAndActivate = async () => {
         try {
-          const res = await fetch('/api/agents/deploy', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-wallet-address': address ?? '',
-              'x-wallet-signature': authCredentials.signature,
-              'x-wallet-message': authCredentials.message,
-            },
-            body: JSON.stringify({ agentId: deployedAgentId, txHash }),
-          });
+          // Step 1: Sync on-chain data to Prisma (server action)
+          setSyncStatus('syncing');
+          const syncResult = await syncDeployedAgent(
+            txHash,
+            address ?? '',
+            buildAgentPayload(),
+            deployedAgentId ?? undefined,
+          );
 
-          if (!res.ok) {
-            console.error('Failed to notify backend of deployment:', await res.text());
+          if (!syncResult.success) {
+            console.error('Sync failed:', syncResult.error);
+            setSyncError(syncResult.error ?? 'Sync failed');
+            setSyncStatus('failed');
+            return;
           }
+
+          // Use the agentId from sync (either existing or newly created)
+          const agentId = syncResult.agentId!;
+          setDeployedAgentId(agentId);
+
+          // Step 2: Notify backend to activate (Farcaster, wallet provisioning)
+          try {
+            const res = await fetch('/api/agents/deploy', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-wallet-address': address ?? '',
+              },
+              body: JSON.stringify({ agentId, txHash }),
+            });
+
+            if (!res.ok) {
+              console.error('Failed to notify backend of deployment:', await res.text());
+              // Non-fatal — agent is still in DEPLOYING state, can be activated later
+            }
+          } catch (err) {
+            console.error('Backend notification failed:', err);
+          }
+
+          setSyncStatus('synced');
         } catch (err) {
-          console.error('Backend notification failed:', err);
+          console.error('Sync error:', err);
+          setSyncError(err instanceof Error ? err.message : 'Sync failed');
+          setSyncStatus('failed');
         }
       };
 
-      void notifyBackend();
+      void syncAndActivate();
     }
-  }, [onChainStatus, txHash, deployedAgentId, address, authCredentials]);
+  }, [isDeployed, txHash, deployedAgentId, address]);
 
   const handleDeploy = DEMO_MODE ? handleDemoDeploy : handleOnChainDeploy;
 
   const isDeploying = status !== 'idle' && status !== 'failed';
   const isConfirmed = status === ('confirmed' as DeployStatus);
+  const isFullyComplete = isConfirmed && syncStatus === 'synced';
+
+  // ── Granular button label based on deploy stage ──
+  const getButtonLabel = () => {
+    if (isFullyComplete) return 'Deployed!';
+    if (syncStatus === 'syncing') return 'Syncing Database...';
+    if (syncStatus === 'failed') return 'Sync Failed — Retry';
+    if (isConfirmed) return 'Syncing...';
+    if (isWalletConfirming) return 'Check Wallet...';
+    if (isMining) return 'Deploying on Base...';
+    if (isDeploying) return 'Preparing...';
+    if (!address) return 'Connect Wallet First';
+    if (DEMO_MODE) return 'Deploy Agent (Demo)';
+    return 'Deploy Agent (0.005 ETH)';
+  };
+
+  // ── Granular button icon based on deploy stage ──
+  const getButtonIcon = () => {
+    if (syncStatus === 'syncing') return <Loader2 className="h-4 w-4 mr-2 animate-spin" />;
+    if (isWalletConfirming) return <Wallet className="h-4 w-4 mr-2 animate-pulse" />;
+    if (isMining) return <Loader2 className="h-4 w-4 mr-2 animate-spin" />;
+    return <Rocket className="h-4 w-4 mr-2" />;
+  };
 
   return (
     <div className="space-y-8">
@@ -303,9 +338,44 @@ export function DeployWizard() {
               error={error}
             />
           )}
-          {status === 'confirmed' && deployedAgentId && (
+          {/* Syncing indicator */}
+          {isConfirmed && syncStatus === 'syncing' && (
+            <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-4 text-center">
+              <div className="flex items-center justify-center gap-2 text-blue-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <p className="font-medium">Syncing to database...</p>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Verifying on-chain data and saving agent record
+              </p>
+            </div>
+          )}
+
+          {/* Sync failed */}
+          {syncStatus === 'failed' && (
+            <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4 text-center">
+              <p className="text-red-400 font-medium mb-1">Database sync failed</p>
+              <p className="text-xs text-muted-foreground mb-3">
+                {syncError ?? 'Unknown error — your on-chain deployment is safe.'}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  hasNotifiedBackend.current = false;
+                  setSyncStatus('idle');
+                  setSyncError(null);
+                }}
+              >
+                Retry Sync
+              </Button>
+            </div>
+          )}
+
+          {/* Success — fully synced */}
+          {isFullyComplete && deployedAgentId && (
             <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-4 text-center">
-              <p className="text-green-400 font-medium mb-2">Agent deployed successfully!</p>
+              <p className="text-green-400 font-medium mb-2">Agent deployed & synced successfully!</p>
               <div className="flex items-center justify-center gap-3">
                 <Button
                   variant="outline"
@@ -330,7 +400,7 @@ export function DeployWizard() {
         <Button
           variant="outline"
           onClick={() => {
-            if (step === 3 && status === 'failed') {
+            if (step === 3 && isFailed) {
               if (DEMO_MODE) {
                 setDemoStatus('idle');
                 setDemoError(null);
@@ -357,19 +427,11 @@ export function DeployWizard() {
         ) : (
           <Button
             onClick={handleDeploy}
-            disabled={isDeploying || isConfirmed || !address}
+            disabled={isDeploying || isConfirmed || isFullyComplete || syncStatus === 'syncing' || !address}
             className="brand-gradient text-white hover:opacity-90"
           >
-            <Rocket className="h-4 w-4 mr-2" />
-            {status === 'confirmed'
-              ? 'Deployed!'
-              : isDeploying
-              ? 'Deploying...'
-              : !address
-              ? 'Connect Wallet First'
-              : DEMO_MODE
-              ? 'Deploy Agent (Demo)'
-              : 'Deploy Agent (0.005 ETH)'}
+            {getButtonIcon()}
+            {getButtonLabel()}
           </Button>
         )}
       </div>

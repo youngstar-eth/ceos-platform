@@ -1,10 +1,22 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { Bot, MessageSquare, Heart, Repeat2, Users } from 'lucide-react';
+import {
+  Bot,
+  MessageSquare,
+  Heart,
+  Repeat2,
+  Users,
+  ExternalLink,
+  Copy,
+  Check,
+  Wallet,
+} from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { cn, formatCompactNumber } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { cn, formatCompactNumber, formatAddress } from '@/lib/utils';
 import { type Agent } from '@/hooks/use-agent';
 
 interface AgentCardProps {
@@ -25,11 +37,23 @@ const statusColors: Record<string, string> = {
 };
 
 export function AgentCard({ agent }: AgentCardProps) {
+  const [copied, setCopied] = useState(false);
+
   const metrics = agent.metrics ?? {
     totalCasts: 0,
     totalLikes: 0,
     totalRecasts: 0,
     totalFollowers: 0,
+  };
+
+  const handleCopyWallet = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!agent.walletAddress) return;
+    void navigator.clipboard.writeText(agent.walletAddress).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   };
 
   return (
@@ -51,11 +75,22 @@ export function AgentCard({ agent }: AgentCardProps) {
               )}
               <div>
                 <h3 className="font-semibold text-sm">{agent.name}</h3>
-                {agent.farcasterUsername && (
-                  <p className="text-xs text-muted-foreground">
+                {agent.farcasterUsername ? (
+                  <a
+                    href={`https://warpcast.com/${agent.farcasterUsername}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-xs text-primary hover:underline flex items-center gap-1"
+                  >
                     @{agent.farcasterUsername}
+                    <ExternalLink className="h-2.5 w-2.5" />
+                  </a>
+                ) : agent.farcasterFid ? (
+                  <p className="text-xs text-muted-foreground">
+                    FID #{agent.farcasterFid}
                   </p>
-                )}
+                ) : null}
               </div>
             </div>
             <Badge
@@ -67,9 +102,31 @@ export function AgentCard({ agent }: AgentCardProps) {
           </div>
         </CardHeader>
         <CardContent>
-          <p className="text-xs text-muted-foreground mb-4 line-clamp-2">
+          <p className="text-xs text-muted-foreground mb-3 line-clamp-2">
             {agent.description ?? 'No description'}
           </p>
+
+          {/* Wallet address row */}
+          {agent.walletAddress && (
+            <div className="flex items-center gap-2 mb-3 p-2 rounded-md bg-muted/50">
+              <Wallet className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="text-xs font-mono text-muted-foreground">
+                {formatAddress(agent.walletAddress)}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5 ml-auto shrink-0"
+                onClick={handleCopyWallet}
+              >
+                {copied ? (
+                  <Check className="h-3 w-3 text-green-500" />
+                ) : (
+                  <Copy className="h-3 w-3" />
+                )}
+              </Button>
+            </div>
+          )}
 
           <div className="grid grid-cols-4 gap-2">
             <MetricItem

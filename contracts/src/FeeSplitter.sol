@@ -5,58 +5,78 @@ import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { ERC20Burnable } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import { IFeeSplitter } from "./interfaces/IFeeSplitter.sol";
+import { ISwapRouter } from "./interfaces/ISwapRouter.sol";
+
+/// @title IWETH
+/// @notice Minimal WETH interface for deposit (ETH -> WETH wrapping)
+interface IWETH {
+    function deposit() external payable;
+    function approve(address spender, uint256 amount) external returns (bool);
+    function balanceOf(address account) external view returns (uint256);
+}
 
 /// @title FeeSplitter
-/// @notice Routes protocol revenue using the v2 40/40/20 split across three destinations.
-/// @dev Implements a two-phase pull pattern for failure isolation:
+/// @notice Hybrid revenue distributor: atomic $RUN buyback-and-burn + pull-pattern claims.
+/// @dev Implements the v2 Virtuals Protocol fee split (40/40/20):
 ///
-///      Phase 1 — Allocation: `distributeFees()` / `distributeUSDCFees()` accept incoming
-///      revenue, calculate the 40/40/20 split, and credit each recipient's claimable balance.
-///      No external transfers occur during allocation.
+///      When `distribute()` is called:
+///        1. 40% → Swap ETH for $RUN via Uniswap V3, then BURN (atomic, on-chain)
+///        2. 40% → Credit to the agent's token treasury (pull pattern)
+///        3. 20% → Credit to the protocol fee recipient (pull pattern)
 ///
-///      Phase 2 — Claim: Each recipient independently calls `claimETH()` / `claimUSDC()`
-///      to withdraw their accumulated balance. A failure in one recipient's claim does not
-///      affect the others, providing full failure isolation.
+///      The $RUN buyback-and-burn is atomic because:
+///        - It's a protocol-level deflationary mechanic that must be trustless
+///        - No reliance on external keepers or bots to execute the burn
+///        - The swap + burn happens in a single transaction
 ///
-///      Split ratios (in basis points, 10_000 = 100%):
-///        - 40% → Agent Treasury (growth reinvestment)
-///        - 40% → Protocol Treasury ($RUN buyback & burn)
-///        - 20% → Scout Fund (autonomous low-cap investment)
+///      The agent treasury and protocol fee use pull pattern because:
+///        - Different agents have different treasury addresses
+///        - A failed claim by one agent shouldn't block others
+///        - Gas cost is distributed to claimers, not the distributor
 ///
-///      Growth share receives the remainder after scout + buyback to prevent rounding loss.
-///      Mirrors the pull pattern used by RevenuePool.claimRevenue() for consistency.
+///      ETH flow: ETH → WETH (wrap) → Uniswap swap → $RUN → burn()
+///      The WETH wrapping is necessary because Uniswap V3's exactInputSingle
+///      operates on ERC-20 tokens, not native ETH.
 contract FeeSplitter is IFeeSplitter, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // ── Constants ──────────────────────────────────────────
 
-    /// @notice Agent Growth allocation in basis points (40%)
-    uint256 public constant SPLIT_GROWTH_BPS = 4_000;
-
-    /// @notice Protocol Buyback allocation in basis points (40%)
+    /// @notice $RUN buyback-and-burn allocation in basis points (40%)
     uint256 public constant SPLIT_BUYBACK_BPS = 4_000;
 
-    /// @notice Scout Fund allocation in basis points (20%)
-    uint256 public constant SPLIT_SCOUT_BPS = 2_000;
+    /// @notice Agent token treasury allocation in basis points (40%)
+    uint256 public constant SPLIT_AGENT_BPS = 4_000;
+
+    /// @notice Protocol fee allocation in basis points (20%)
+    uint256 public constant SPLIT_PROTOCOL_BPS = 2_000;
 
     /// @notice Basis points denominator (10_000 = 100%)
     uint256 public constant BPS_DENOMINATOR = 10_000;
 
+    /// @notice Canonical WETH address on Base L2
+    IWETH public constant WETH = IWETH(0x4200000000000000000000000000000000000006);
+
     // ── Immutable State ────────────────────────────────────
 
-    /// @notice The USDC token contract on Base
-    IERC20 public immutable usdc;
+    /// @notice The Uniswap V3 SwapRouter contract on Base
+    ISwapRouter public immutable swapRouter;
+
+    /// @notice The $RUN token contract (ERC20Burnable)
+    ERC20Burnable public immutable runToken;
 
     // ── Mutable State ──────────────────────────────────────
 
-    /// @notice The protocol treasury address (receives 40% for $RUN buyback & burn)
-    address public protocolTreasury;
+    /// @notice The protocol fee recipient address (receives 20%)
+    address public protocolFeeRecipient;
 
-    /// @notice The scout fund address (receives 20% for autonomous investment)
-    address public scoutFund;
+    /// @notice The Uniswap V3 pool fee tier for the WETH/$RUN pair
+    /// @dev Common values: 500 (0.05%), 3000 (0.30%), 10000 (1.00%)
+    uint24 public poolFee;
 
-    /// @notice Set of addresses authorized to call distribution functions
+    /// @notice Set of addresses authorized to call distribute()
     mapping(address => bool) public authorizedDistributors;
 
     // ── Pull Pattern State ─────────────────────────────────
@@ -64,37 +84,36 @@ contract FeeSplitter is IFeeSplitter, Ownable, ReentrancyGuard {
     /// @notice Accumulated claimable ETH per recipient address
     mapping(address => uint256) private _claimableETH;
 
-    /// @notice Accumulated claimable USDC per recipient address
-    mapping(address => uint256) private _claimableUSDC;
-
     // ── Distribution Tracking ──────────────────────────────
 
     /// @notice Sequential counter for distribution event IDs
     uint256 private _distributionCount;
 
-    /// @notice Historical record of all distribution events
-    mapping(uint256 => DistributionRecord) private _distributions;
+    /// @notice Total $RUN burned across all distributions
+    uint256 public totalRunBurned;
 
     // ── Constructor ────────────────────────────────────────
 
-    /// @notice Initialize the FeeSplitter with destination addresses
-    /// @dev All addresses are validated against zero address. USDC is immutable
-    ///      as the payment token should not change post-deployment.
-    /// @param _protocolTreasury The protocol treasury for $RUN buyback & burn
-    /// @param _scoutFund The scout fund for autonomous low-cap investment
-    /// @param _usdc The USDC token contract address on Base
+    /// @notice Initialize the FeeSplitter with protocol addresses
+    /// @param _swapRouter The Uniswap V3 SwapRouter address on Base
+    /// @param _runToken The $RUN token contract address
+    /// @param _protocolFeeRecipient The protocol fee recipient (receives 20%)
+    /// @param _poolFee The Uniswap V3 pool fee tier for the WETH/$RUN pair
     constructor(
-        address _protocolTreasury,
-        address _scoutFund,
-        address _usdc
+        address _swapRouter,
+        address _runToken,
+        address _protocolFeeRecipient,
+        uint24 _poolFee
     ) Ownable(msg.sender) {
-        if (_protocolTreasury == address(0)) revert ZeroAddress();
-        if (_scoutFund == address(0)) revert ZeroAddress();
-        if (_usdc == address(0)) revert ZeroAddress();
+        if (_swapRouter == address(0)) revert ZeroAddress();
+        if (_runToken == address(0)) revert ZeroAddress();
+        if (_protocolFeeRecipient == address(0)) revert ZeroAddress();
+        if (_poolFee == 0) revert InvalidPoolFee();
 
-        protocolTreasury = _protocolTreasury;
-        scoutFund = _scoutFund;
-        usdc = IERC20(_usdc);
+        swapRouter = ISwapRouter(_swapRouter);
+        runToken = ERC20Burnable(_runToken);
+        protocolFeeRecipient = _protocolFeeRecipient;
+        poolFee = _poolFee;
     }
 
     // ── Modifiers ──────────────────────────────────────────
@@ -107,69 +126,72 @@ contract FeeSplitter is IFeeSplitter, Ownable, ReentrancyGuard {
         _;
     }
 
-    // ── Phase 1: ETH Allocation ────────────────────────────
+    // ── Core: Hybrid Distribution ──────────────────────────
 
     /// @inheritdoc IFeeSplitter
-    function distributeFees(address agentTreasury) external payable nonReentrant onlyAuthorized {
+    function distribute(
+        address agentTreasury,
+        uint256 minRunOut
+    ) external payable nonReentrant onlyAuthorized {
         if (msg.value == 0) revert NoFeesToDistribute();
         if (agentTreasury == address(0)) revert ZeroAddress();
 
-        // Calculate shares — growth gets remainder to absorb rounding dust
-        uint256 amountScout = (msg.value * SPLIT_SCOUT_BPS) / BPS_DENOMINATOR;
+        // Calculate the three-way split
         uint256 amountBuyback = (msg.value * SPLIT_BUYBACK_BPS) / BPS_DENOMINATOR;
-        uint256 amountGrowth = msg.value - amountScout - amountBuyback;
+        uint256 amountProtocol = (msg.value * SPLIT_PROTOCOL_BPS) / BPS_DENOMINATOR;
+        uint256 amountAgent = msg.value - amountBuyback - amountProtocol;
 
-        // Credit claimable balances (no external calls — pure state updates)
-        _claimableETH[agentTreasury] += amountGrowth;
-        _claimableETH[protocolTreasury] += amountBuyback;
-        _claimableETH[scoutFund] += amountScout;
+        // ── Phase 1: Atomic $RUN buyback-and-burn (40%) ────────
+        uint256 runBurned = _buybackAndBurn(amountBuyback, minRunOut);
 
-        // Record distribution for auditability
+        // ── Phase 2: Credit pull-pattern balances ──────────────
+        _claimableETH[agentTreasury] += amountAgent;
+        _claimableETH[protocolFeeRecipient] += amountProtocol;
+
+        // ── Tracking ───────────────────────────────────────────
         uint256 distributionId = _distributionCount;
-        _distributions[distributionId] = DistributionRecord({
-            distributor: msg.sender,
-            agentTreasury: agentTreasury,
-            totalETH: msg.value,
-            totalUSDC: 0,
-            timestamp: block.timestamp
-        });
         _distributionCount = distributionId + 1;
 
-        emit FeesAllocated(distributionId, agentTreasury, amountGrowth, amountBuyback, amountScout, false);
+        emit FeesDistributed(distributionId, agentTreasury, amountAgent, amountBuyback, amountProtocol);
+        emit BuybackExecuted(distributionId, amountBuyback, runBurned);
     }
 
-    // ── Phase 1: USDC Allocation ───────────────────────────
+    /// @notice Internal: wrap ETH → WETH, swap on Uniswap V3, burn $RUN
+    /// @dev The full ETH→WETH→swap→burn pipeline in one atomic call.
+    ///      Uses WETH.deposit() for wrapping because Uniswap V3 SwapRouter's
+    ///      exactInputSingle only accepts ERC-20 tokens, not native ETH.
+    /// @param ethAmount The ETH amount to use for buyback
+    /// @param minRunOut Minimum $RUN tokens to receive (slippage protection)
+    /// @return runAmount The amount of $RUN tokens bought and burned
+    function _buybackAndBurn(uint256 ethAmount, uint256 minRunOut) private returns (uint256 runAmount) {
+        if (ethAmount == 0) return 0;
 
-    /// @inheritdoc IFeeSplitter
-    function distributeUSDCFees(address agentTreasury, uint256 amount) external nonReentrant onlyAuthorized {
-        if (amount == 0) revert NoFeesToDistribute();
-        if (agentTreasury == address(0)) revert ZeroAddress();
+        // Step 1: Wrap ETH -> WETH
+        WETH.deposit{ value: ethAmount }();
 
-        // Pull USDC from caller (requires prior approval)
-        usdc.safeTransferFrom(msg.sender, address(this), amount);
+        // Step 2: Approve SwapRouter to spend our WETH
+        WETH.approve(address(swapRouter), ethAmount);
 
-        // Calculate shares — growth gets remainder to absorb rounding dust
-        uint256 amountScout = (amount * SPLIT_SCOUT_BPS) / BPS_DENOMINATOR;
-        uint256 amountBuyback = (amount * SPLIT_BUYBACK_BPS) / BPS_DENOMINATOR;
-        uint256 amountGrowth = amount - amountScout - amountBuyback;
-
-        // Credit claimable balances (no external calls after safeTransferFrom)
-        _claimableUSDC[agentTreasury] += amountGrowth;
-        _claimableUSDC[protocolTreasury] += amountBuyback;
-        _claimableUSDC[scoutFund] += amountScout;
-
-        // Record distribution for auditability
-        uint256 distributionId = _distributionCount;
-        _distributions[distributionId] = DistributionRecord({
-            distributor: msg.sender,
-            agentTreasury: agentTreasury,
-            totalETH: 0,
-            totalUSDC: amount,
-            timestamp: block.timestamp
+        // Step 3: Swap WETH -> $RUN via Uniswap V3
+        // The $RUN is sent to THIS contract so we can burn it
+        ISwapRouter.ExactInputSingleParams memory params = ISwapRouter.ExactInputSingleParams({
+            tokenIn: address(WETH),
+            tokenOut: address(runToken),
+            fee: poolFee,
+            recipient: address(this),
+            deadline: block.timestamp,
+            amountIn: ethAmount,
+            amountOutMinimum: minRunOut,
+            sqrtPriceLimitX96: 0
         });
-        _distributionCount = distributionId + 1;
 
-        emit FeesAllocated(distributionId, agentTreasury, amountGrowth, amountBuyback, amountScout, true);
+        runAmount = swapRouter.exactInputSingle(params);
+
+        // Step 4: Burn all $RUN we received
+        runToken.burn(runAmount);
+        totalRunBurned += runAmount;
+
+        emit RunBurned(runAmount);
     }
 
     // ── Phase 2: Claims ────────────────────────────────────
@@ -188,30 +210,11 @@ contract FeeSplitter is IFeeSplitter, Ownable, ReentrancyGuard {
         emit ETHClaimed(msg.sender, amount);
     }
 
-    /// @inheritdoc IFeeSplitter
-    function claimUSDC() external nonReentrant {
-        uint256 amount = _claimableUSDC[msg.sender];
-        if (amount == 0) revert NothingToClaim();
-
-        // Zero balance BEFORE transfer (checks-effects-interactions)
-        _claimableUSDC[msg.sender] = 0;
-
-        usdc.safeTransfer(msg.sender, amount);
-
-        emit USDCClaimed(msg.sender, amount);
-    }
-
     // ── Views ──────────────────────────────────────────────
 
     /// @inheritdoc IFeeSplitter
-    function getClaimable(address recipient) external view returns (uint256 ethAmount, uint256 usdcAmount) {
+    function getClaimable(address recipient) external view returns (uint256 ethAmount) {
         ethAmount = _claimableETH[recipient];
-        usdcAmount = _claimableUSDC[recipient];
-    }
-
-    /// @inheritdoc IFeeSplitter
-    function getDistribution(uint256 distributionId) external view returns (DistributionRecord memory record) {
-        record = _distributions[distributionId];
     }
 
     /// @inheritdoc IFeeSplitter
@@ -222,19 +225,19 @@ contract FeeSplitter is IFeeSplitter, Ownable, ReentrancyGuard {
     // ── Admin ──────────────────────────────────────────────
 
     /// @inheritdoc IFeeSplitter
-    function setProtocolTreasury(address newTreasury) external onlyOwner {
-        if (newTreasury == address(0)) revert ZeroAddress();
-        address oldTreasury = protocolTreasury;
-        protocolTreasury = newTreasury;
-        emit ProtocolTreasuryUpdated(oldTreasury, newTreasury);
+    function setProtocolFeeRecipient(address newRecipient) external onlyOwner {
+        if (newRecipient == address(0)) revert ZeroAddress();
+        address oldRecipient = protocolFeeRecipient;
+        protocolFeeRecipient = newRecipient;
+        emit ProtocolFeeRecipientUpdated(oldRecipient, newRecipient);
     }
 
     /// @inheritdoc IFeeSplitter
-    function setScoutFund(address newScoutFund) external onlyOwner {
-        if (newScoutFund == address(0)) revert ZeroAddress();
-        address oldFund = scoutFund;
-        scoutFund = newScoutFund;
-        emit ScoutFundUpdated(oldFund, newScoutFund);
+    function setPoolFee(uint24 newFee) external onlyOwner {
+        if (newFee == 0) revert InvalidPoolFee();
+        uint24 oldFee = poolFee;
+        poolFee = newFee;
+        emit PoolFeeUpdated(oldFee, newFee);
     }
 
     /// @inheritdoc IFeeSplitter
@@ -245,9 +248,8 @@ contract FeeSplitter is IFeeSplitter, Ownable, ReentrancyGuard {
 
     // ── Receive ────────────────────────────────────────────
 
-    /// @notice Accept direct ETH transfers (e.g., from agent profit-taking or legacy integrations)
-    /// @dev ETH received via receive() is NOT automatically allocated. It sits in the contract
-    ///      balance until an authorized distributor calls distributeFees(). This prevents
-    ///      unattributed revenue from being silently split without an agent treasury target.
+    /// @notice Accept direct ETH transfers (e.g., from AgentFactory deploy fees)
+    /// @dev ETH received via receive() is NOT automatically distributed. It sits in the
+    ///      contract balance until an authorized distributor calls distribute().
     receive() external payable {}
 }

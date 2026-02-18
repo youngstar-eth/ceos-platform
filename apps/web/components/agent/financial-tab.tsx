@@ -13,13 +13,11 @@ import {
   Vault,
   Flame,
   TrendingUp,
-  Search,
+  Coins,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   useAgentFinancials,
-  useScoutFundPosition,
-  useIsScoutable,
 } from '@/hooks/finance/use-agent-financials';
 
 interface FinancialTabProps {
@@ -99,16 +97,8 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
   );
 }
 
-export function FinancialTab({ treasuryAddress, agentToken, className }: FinancialTabProps) {
+export function FinancialTab({ treasuryAddress, className }: FinancialTabProps) {
   const { ethBalance, totalBurns, totalBurnedAmount, isLoading } = useAgentFinancials(treasuryAddress);
-  const { data: scoutPosition } = useScoutFundPosition(agentToken);
-  const { data: isScoutable } = useIsScoutable(agentToken);
-
-  const position = scoutPosition as {
-    token: Address;
-    totalInvested: bigint;
-    investmentCount: bigint;
-  } | undefined;
 
   const chartData = ethBalance ? generateMockHistory(ethBalance) : [];
 
@@ -129,14 +119,6 @@ export function FinancialTab({ treasuryAddress, agentToken, className }: Financi
   const aum = ethBalance ? Number(formatEther(ethBalance)).toFixed(4) : '0';
   const burns = totalBurns ? totalBurns.toString() : '0';
   const burnedAmount = totalBurnedAmount ? Number(formatEther(totalBurnedAmount)).toFixed(4) : '0';
-
-  const scoutStatus = !agentToken
-    ? 'N/A'
-    : isScoutable
-      ? position && position.investmentCount > 0n
-        ? 'Invested'
-        : 'Scoutable'
-      : 'Not Listed';
 
   return (
     <div className={cn('space-y-5', className)}>
@@ -217,18 +199,14 @@ export function FinancialTab({ treasuryAddress, agentToken, className }: Financi
         />
         <FinancialStatBox
           icon={TrendingUp}
-          label="Scout Invested"
-          value={
-            position && position.totalInvested > 0n
-              ? `${Number(formatEther(position.totalInvested)).toFixed(4)} ETH`
-              : '0'
-          }
+          label="Fee Split"
+          value="40/40/20"
           color="acid"
         />
         <FinancialStatBox
-          icon={Search}
-          label="Scout Status"
-          value={scoutStatus}
+          icon={Coins}
+          label="$RUN Burned"
+          value={`${burnedAmount} ETH`}
           color="cyan"
         />
       </div>

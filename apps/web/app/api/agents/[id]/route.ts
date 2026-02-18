@@ -1,7 +1,10 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
-import { successResponse, errorResponse } from "@/lib/api-utils";
+import { successResponse, errorResponse, sanitizeAgent } from "@/lib/api-utils";
 import { Errors } from "@/lib/errors";
 import { verifyWalletSignature } from "@/lib/auth";
 import { publicLimiter, authenticatedLimiter, getClientIp } from "@/lib/rate-limit";
@@ -36,7 +39,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       throw Errors.notFound("Agent");
     }
 
-    return successResponse(agent);
+    return successResponse(sanitizeAgent(agent as unknown as Record<string, unknown>));
   } catch (err) {
     return errorResponse(err);
   }
