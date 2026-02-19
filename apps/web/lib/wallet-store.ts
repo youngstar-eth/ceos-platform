@@ -3,18 +3,25 @@
  *
  * Bridges @repo/wallet to this app's Prisma instance.
  * Import this instead of @repo/wallet directly in route handlers.
+ *
+ * Accepts a PrismaClient instance so the caller controls the DB connection.
+ * Falls back to the app-level singleton when no argument is provided.
  */
-import { createWalletStore as createBaseStore } from '@repo/wallet';
-import { prisma } from '@/lib/prisma';
+import {
+  createWalletStore as createBaseStore,
+  type WalletPrismaClient,
+} from '@repo/wallet';
+import { prisma as defaultPrisma } from '@/lib/prisma';
 
-// Singleton — one store per process lifetime
-let _store: ReturnType<typeof createBaseStore> | null = null;
-
-export function createWalletStore() {
-  if (!_store) {
-    _store = createBaseStore(prisma);
-  }
-  return _store;
+/**
+ * Create (or return cached) WalletStore.
+ *
+ * @param prismaClient - Optional Prisma instance. Defaults to the
+ *   app-level singleton (`@/lib/prisma`). Pass explicitly in contexts
+ *   where you need a different client (e.g., transaction-scoped).
+ */
+export function createWalletStore(prismaClient?: WalletPrismaClient) {
+  return createBaseStore(prismaClient ?? defaultPrisma);
 }
 
 export type { WalletStore, WalletProvisionResult } from '@repo/wallet';

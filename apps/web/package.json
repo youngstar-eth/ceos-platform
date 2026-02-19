@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@ceosrun/shared": "*",
+    "@repo/wallet": "*",
     "@coinbase/coinbase-sdk": "^0.25.0",
     "@farcaster/hub-nodejs": "^0.15.10",
     "@prisma/client": "^6.19.2",

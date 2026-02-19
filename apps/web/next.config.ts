@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import path from 'node:path';
 
 const nextConfig: NextConfig = {
   output: 'standalone',
@@ -10,7 +11,7 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  transpilePackages: ['@ceosrun/shared'],
+  transpilePackages: ['@ceosrun/shared', '@repo/wallet', 'viem'],
   images: {
     remotePatterns: [
       {
@@ -68,6 +69,17 @@ const nextConfig: NextConfig = {
   ],
   webpack: (config, { isServer }) => {
     config.resolve.fallback = { fs: false, net: false, tls: false };
+
+    // Force viem to resolve via its ESM entry point.
+    // Prevents the "Cannot find module 'viem/_cjs/...'" error
+    // that occurs when wagmi triggers CJS resolution during SSR.
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      viem: path.resolve(
+        process.cwd(),
+        'node_modules/viem',
+      ),
+    };
 
     // pino-pretty is an optional dependency of pino used by WalletConnect internals.
     // It's not needed at runtime in the browser, so we externalize it to avoid build errors.

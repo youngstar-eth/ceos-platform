@@ -11,7 +11,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12; // 96-bit IV for GCM
-const TAG_LENGTH = 16; // 128-bit auth tag
+// GCM auth tag is 128-bit (16 bytes) by default in Node.js crypto
 
 function getEncryptionKey(): Buffer {
   const keyHex = process.env.WALLET_ENCRYPTION_KEY;

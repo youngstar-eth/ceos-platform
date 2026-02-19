@@ -18,6 +18,8 @@ import { createSchedulerWorker } from '../workers/scheduler.js';
 import { createScoutWorker } from '../workers/scout-worker.js';
 import { createTreasuryWorker } from '../workers/treasury-worker.js';
 import { createFeeDistributorWorker } from '../workers/fee-distributor.js';
+import { createWalletProvisionerWorker, SCAN_INTERVAL_MS } from '../workers/wallet-provisioner.js';
+import { createSocialProvisionerWorker, SCAN_INTERVAL_MS as SOCIAL_SCAN_INTERVAL_MS } from '../workers/social-provisioner.js';
 import { getStrategy } from './strategies/posting.js';
 
 const METRICS_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -208,11 +210,13 @@ async function bootstrap(): Promise<RuntimeContext> {
     type: SkillType.CONTENT_GENERATION,
     timeoutMs: 30_000,
     execute: async (ctx) => {
-      const topic = (ctx.parameters['topic'] as string) ?? '';
-      const result = await pipeline.generateContent('original', topic, {
-        agentId: ctx.agentId,
-        persona: ctx.agentPersona,
-      });
+      const agentName = (ctx.parameters['agentName'] as string) ?? 'Agent';
+      const strategyName = (ctx.parameters['strategy'] as string) ?? 'Balanced';
+      const strategy = getStrategy(strategyName);
+      const result = await pipeline.generateContent(
+        { agentId: ctx.agentId, persona: ctx.agentPersona, name: agentName },
+        strategy,
+      );
       return result;
     },
   });
@@ -303,7 +307,45 @@ async function bootstrap(): Promise<RuntimeContext> {
 
   logger.info('BullMQ workers initialized');
 
-  // 5c. Initialize metrics scheduling queue
+  // 5c. Initialize Wallet Provisioner (background CDP wallet creation)
+  const walletProvisioner = createWalletProvisionerWorker(redis);
+
+  // Run initial scan for any DEPLOYING agents left from previous runs
+  await walletProvisioner.scanAndEnqueue();
+
+  // Start periodic scanner: check for DEPLOYING agents every 2 minutes
+  let walletScanTimer: NodeJS.Timeout | null = null;
+  walletScanTimer = setInterval(() => {
+    if (!isShuttingDown) {
+      void walletProvisioner.scanAndEnqueue();
+    }
+  }, SCAN_INTERVAL_MS);
+
+  logger.info(
+    { scanIntervalMs: SCAN_INTERVAL_MS },
+    'Wallet provisioner initialized — scanning for DEPLOYING agents',
+  );
+
+  // 5d. Initialize Social Provisioner (Farcaster identity + Genesis cast)
+  const socialProvisioner = createSocialProvisionerWorker(redis, config);
+
+  // Run initial scan for agents with wallet but no social identity
+  await socialProvisioner.scanAndEnqueue();
+
+  // Start periodic scanner: check for socially-unprovisioned agents every 2 minutes
+  let socialScanTimer: NodeJS.Timeout | null = null;
+  socialScanTimer = setInterval(() => {
+    if (!isShuttingDown) {
+      void socialProvisioner.scanAndEnqueue();
+    }
+  }, SOCIAL_SCAN_INTERVAL_MS);
+
+  logger.info(
+    { scanIntervalMs: SOCIAL_SCAN_INTERVAL_MS },
+    'Social provisioner initialized — scanning for agents awaiting identity',
+  );
+
+  // 5e. Initialize metrics scheduling queue
   const metricsQueue = new Queue('agent-metrics', { connection: redis });
   logger.info('Metrics scheduling queue initialized');
 
@@ -340,6 +382,14 @@ async function bootstrap(): Promise<RuntimeContext> {
       clearInterval(agentPollTimer);
       agentPollTimer = null;
     }
+    if (walletScanTimer) {
+      clearInterval(walletScanTimer);
+      walletScanTimer = null;
+    }
+    if (socialScanTimer) {
+      clearInterval(socialScanTimer);
+      socialScanTimer = null;
+    }
 
     const shutdownTimeout = setTimeout(() => {
       logger.error('Shutdown timed out after 30s, forcing exit');
@@ -358,6 +408,8 @@ async function bootstrap(): Promise<RuntimeContext> {
         postingWorker.close(),
         shutdownScheduler(),
       ];
+      workerClosePromises.push(walletProvisioner.shutdown());
+      workerClosePromises.push(socialProvisioner.shutdown());
       if (scoutWorker) workerClosePromises.push(scoutWorker.close());
       if (treasuryWorker) workerClosePromises.push(treasuryWorker.close());
       if (feeDistributorWorker) workerClosePromises.push(feeDistributorWorker.close());
@@ -433,7 +485,7 @@ async function bootstrap(): Promise<RuntimeContext> {
   runtimeContext = context;
 
   const runningAgents = engine.getRunningAgentIds();
-  const activeWorkers = ['content', 'metrics', 'posting', 'scheduler'];
+  const activeWorkers = ['content', 'metrics', 'posting', 'scheduler', 'wallet-provisioner', 'social-provisioner'];
   if (scoutWorker) activeWorkers.push('scout', 'treasury', 'fee-distributor');
   logger.info({
     workers: activeWorkers,

@@ -12,7 +12,7 @@
  * - DB operations use a PrismaClient-compatible interface.
  */
 import { Coinbase, Wallet } from '@coinbase/coinbase-sdk';
-import { encryptForStorage, decryptFromStorage } from './crypto';
+import { encryptWalletData, decryptWalletData, decryptFromStorage } from './crypto';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,6 +45,8 @@ interface AgentRecord {
   walletAddress: string | null;
   walletEmail: string | null;
   cdpWalletData: string | null;
+  walletDataIV: string | null;
+  walletAuthTag: string | null;
 }
 
 /**
@@ -153,17 +155,20 @@ export function createWalletStore(prisma: WalletPrismaClient): WalletStore {
       const exportData = wallet.export();
       const exportJson = JSON.stringify(exportData);
 
-      // 3. Encrypt with AES-256-GCM before DB storage
-      const encryptedData = encryptForStorage(exportJson);
+      // 3. Encrypt with AES-256-GCM — store IV and auth tag in separate columns
+      const encrypted = encryptWalletData(exportJson);
 
       // 4. Persist everything to DB — walletId for reference, encrypted data for recovery
+      //    IV and auth tag are stored separately for auditability and rotation readiness
       await prisma.agent.update({
         where: { id: agentId },
         data: {
           walletId,
           walletAddress: address,
           walletEmail: email,
-          cdpWalletData: encryptedData,
+          cdpWalletData: encrypted.ciphertext,
+          walletDataIV: encrypted.nonce,
+          walletAuthTag: encrypted.tag,
           // Defaults from env (can be updated per-agent via PATCH /agents/:id/wallet)
           walletSessionLimit: Number(process.env.AWAL_DEFAULT_SESSION_LIMIT ?? '50'),
           walletTxLimit: Number(process.env.AWAL_DEFAULT_TX_LIMIT ?? '10'),
@@ -188,6 +193,8 @@ export function createWalletStore(prisma: WalletPrismaClient): WalletStore {
           walletAddress: true,
           walletEmail: true,
           cdpWalletData: true,
+          walletDataIV: true,
+          walletAuthTag: true,
         },
       });
 
@@ -195,7 +202,18 @@ export function createWalletStore(prisma: WalletPrismaClient): WalletStore {
         throw new Error(`[WalletStore] Agent not found: ${agentId}`);
       }
 
-      // Prefer encrypted cdpWalletData (new path)
+      // V2 path: separated ciphertext + IV + auth tag columns
+      if (agent.cdpWalletData && agent.walletDataIV && agent.walletAuthTag) {
+        const decrypted = decryptWalletData({
+          ciphertext: agent.cdpWalletData,
+          nonce: agent.walletDataIV,
+          tag: agent.walletAuthTag,
+        });
+        const walletData = JSON.parse(decrypted);
+        return Wallet.import(walletData);
+      }
+
+      // V1 fallback: single base64-encoded JSON blob in cdpWalletData
       if (agent.cdpWalletData) {
         const decrypted = decryptFromStorage(agent.cdpWalletData);
         const walletData = JSON.parse(decrypted);
@@ -247,7 +265,7 @@ export function createWalletStore(prisma: WalletPrismaClient): WalletStore {
       agentId: string,
       recipientAddress: string,
       amountUsdc: string,
-      serviceUrl: string,
+      _serviceUrl: string,
     ): Promise<WalletPaymentResult> {
       const wallet = await store.recoverWallet(agentId);
 

@@ -12,7 +12,7 @@
     "lint": "eslint src/"
   },
   "dependencies": {
-    "@coinbase/coinbase-sdk": "^0.15.0"
+    "@coinbase/coinbase-sdk": "^0.25.0"
   },
   "peerDependencies": {
     "@prisma/client": ">=5.0.0"
