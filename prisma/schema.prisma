@@ -49,6 +49,10 @@ model Agent {
   walletSessionLimit Decimal?  @default(50) @db.Decimal(18, 6) @map("wallet_session_limit")
   walletTxLimit      Decimal?  @default(10) @db.Decimal(18, 6) @map("wallet_tx_limit")
   walletAutoFund     Boolean   @default(false) @map("wallet_auto_fund")
+  walletId           String?   @unique @map("wallet_id")
+  cdpWalletData      String?   @map("cdp_wallet_data")
+  walletDataIV       String?   @map("wallet_data_iv")
+  walletAuthTag      String?   @map("wallet_auth_tag")
   lastEngagementRate Float?    @map("last_engagement_rate")
   lastFollowerCount  Int?      @map("last_follower_count")
   lastMetricsAt      DateTime? @map("last_metrics_at")
@@ -61,6 +65,9 @@ model Agent {
   walletTransactions WalletTransaction[]
   metricsSnapshots   AgentMetricsSnapshot[]
   scoutInvestments   ScoutInvestment[]
+  sellerOfferings  ServiceOffering[] @relation("SellerOfferings")
+  buyerJobs        ServiceJob[]      @relation("BuyerJobs")
+  sellerJobs       ServiceJob[]      @relation("SellerJobs")
 
   @@index([creatorAddress])
   @@index([status])
@@ -297,4 +304,95 @@ model FeeDistribution {
 
   @@index([status])
   @@map("fee_distributions")
+}
+
+// ============================================================
+// Service Registry — Agent-to-Agent Economy Layer
+// ============================================================
+
+enum ServiceStatus {
+  ACTIVE
+  PAUSED
+  DELISTED
+}
+
+enum ServiceJobStatus {
+  CREATED
+  ACCEPTED
+  DELIVERING
+  COMPLETED
+  REJECTED
+  DISPUTED
+  EXPIRED
+}
+
+model ServiceOffering {
+  id              String        @id @default(cuid())
+  sellerAgentId   String        @map("seller_agent_id")
+
+  name            String
+  slug            String        @unique
+  description     String        @db.Text
+  category        String        // content | analysis | trading | engagement | networking
+
+  priceUsdc       BigInt        @map("price_usdc") // micro-USDC (6 decimals)
+  pricingModel    String        @default("per_call") @map("pricing_model")
+
+  inputSchema     Json          @map("input_schema")
+  outputSchema    Json          @map("output_schema")
+
+  maxLatencyMs    Int           @default(30000) @map("max_latency_ms")
+  status          ServiceStatus @default(ACTIVE)
+
+  totalJobs       Int           @default(0) @map("total_jobs")
+  completedJobs   Int           @default(0) @map("completed_jobs")
+  avgRating       Float?        @map("avg_rating")
+  avgLatencyMs    Int?          @map("avg_latency_ms")
+
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  sellerAgent     Agent         @relation("SellerOfferings", fields: [sellerAgentId], references: [id])
+  jobs            ServiceJob[]
+
+  @@index([category, status])
+  @@index([sellerAgentId])
+  @@index([priceUsdc])
+  @@map("service_offerings")
+}
+
+model ServiceJob {
+  id              String           @id @default(cuid())
+  offeringId      String           @map("offering_id")
+  buyerAgentId    String           @map("buyer_agent_id")
+  sellerAgentId   String           @map("seller_agent_id")
+
+  status          ServiceJobStatus @default(CREATED)
+
+  requirements    Json
+  deliverables    Json?
+
+  priceUsdc       BigInt           @map("price_usdc")
+  paymentTxHash   String?          @map("payment_tx_hash")
+  buybackTxHash   String?          @map("buyback_tx_hash")
+
+  buyerRating     Int?             @map("buyer_rating")
+  buyerFeedback   String?          @map("buyer_feedback")
+
+  acceptedAt      DateTime?        @map("accepted_at")
+  deliveredAt     DateTime?        @map("delivered_at")
+  completedAt     DateTime?        @map("completed_at")
+  expiresAt       DateTime         @map("expires_at")
+
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  offering        ServiceOffering  @relation(fields: [offeringId], references: [id])
+  buyerAgent      Agent            @relation("BuyerJobs", fields: [buyerAgentId], references: [id])
+  sellerAgent     Agent            @relation("SellerJobs", fields: [sellerAgentId], references: [id])
+
+  @@index([buyerAgentId, status])
+  @@index([sellerAgentId, status])
+  @@index([status, expiresAt])
+  @@map("service_jobs")
 }

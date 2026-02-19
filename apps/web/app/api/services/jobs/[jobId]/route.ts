@@ -1,0 +1,230 @@
+import { NextRequest } from "next/server";
+import { Prisma, ServiceJobStatus } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { logger } from "@/lib/logger";
+import { successResponse, errorResponse } from "@/lib/api-utils";
+import { Errors } from "@/lib/errors";
+import { verifyWalletSignature } from "@/lib/auth";
+import { authenticatedLimiter } from "@/lib/rate-limit";
+import { updateServiceJobSchema } from "@/lib/validation";
+
+type RouteContext = { params: Promise<{ jobId: string }> };
+
+/**
+ * Valid state transitions (seller-driven except DISPUTED).
+ */
+const VALID_TRANSITIONS: Record<ServiceJobStatus, ServiceJobStatus[]> = {
+  CREATED: ["ACCEPTED", "REJECTED"],
+  ACCEPTED: ["DELIVERING"],
+  DELIVERING: ["COMPLETED"],
+  COMPLETED: [],
+  REJECTED: [],
+  DISPUTED: [],
+  EXPIRED: [],
+};
+
+/**
+ * GET /api/services/jobs/[jobId]
+ *
+ * Fetch a single job. Caller must be buyer or seller creator.
+ */
+export async function GET(request: NextRequest, context: RouteContext) {
+  try {
+    const address = await verifyWalletSignature(request);
+    authenticatedLimiter.check(address);
+    const { jobId } = await context.params;
+
+    const job = await prisma.serviceJob.findUnique({
+      where: { id: jobId },
+      include: {
+        offering: {
+          include: {
+            sellerAgent: {
+              select: {
+                id: true,
+                name: true,
+                pfpUrl: true,
+                walletAddress: true,
+                creatorAddress: true,
+              },
+            },
+          },
+        },
+        buyerAgent: {
+          select: {
+            id: true,
+            name: true,
+            pfpUrl: true,
+            walletAddress: true,
+            creatorAddress: true,
+          },
+        },
+      },
+    });
+
+    if (!job) throw Errors.notFound("Service job");
+
+    // Auth: must be buyer or seller creator
+    const isBuyerCreator = job.buyerAgent.creatorAddress === address;
+    const isSellerCreator = job.offering.sellerAgent.creatorAddress === address;
+    if (!isBuyerCreator && !isSellerCreator) {
+      throw Errors.forbidden("Not authorized to view this job");
+    }
+
+    // Strip sensitive creatorAddress from response
+    const { creatorAddress: _bc, ...buyerSafe } = job.buyerAgent;
+    const { creatorAddress: _sc, ...sellerSafe } = job.offering.sellerAgent;
+
+    return successResponse({
+      ...job,
+      priceUsdc: job.priceUsdc.toString(),
+      buyerAgent: buyerSafe,
+      offering: { ...job.offering, sellerAgent: sellerSafe },
+    });
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * PATCH /api/services/jobs/[jobId]
+ *
+ * Transition job status. Only the seller agent's creator can transition.
+ *
+ * State machine:
+ *   CREATED  → ACCEPTED | REJECTED
+ *   ACCEPTED → DELIVERING
+ *   DELIVERING → COMPLETED
+ *   (COMPLETED, REJECTED, DISPUTED, EXPIRED are terminal)
+ *
+ * On COMPLETED: update offering stats (completedJobs, avgLatencyMs) in $transaction.
+ */
+export async function PATCH(request: NextRequest, context: RouteContext) {
+  try {
+    const address = await verifyWalletSignature(request);
+    authenticatedLimiter.check(address);
+    const { jobId } = await context.params;
+
+    const body: unknown = await request.json();
+    const data = updateServiceJobSchema.parse(body);
+    const newStatus = data.status as ServiceJobStatus;
+
+    // Fetch job with offering + seller agent
+    const job = await prisma.serviceJob.findUnique({
+      where: { id: jobId },
+      include: {
+        offering: {
+          include: {
+            sellerAgent: { select: { creatorAddress: true } },
+          },
+        },
+      },
+    });
+
+    if (!job) throw Errors.notFound("Service job");
+
+    // Only seller creator can transition
+    if (job.offering.sellerAgent.creatorAddress !== address) {
+      throw Errors.forbidden("Only the seller agent's creator can update job status");
+    }
+
+    // Check job hasn't expired (unless rejecting)
+    if (
+      job.expiresAt < new Date() &&
+      job.status !== "EXPIRED" &&
+      newStatus !== "REJECTED"
+    ) {
+      throw Errors.conflict("Job has expired");
+    }
+
+    // Validate transition
+    const allowed = VALID_TRANSITIONS[job.status] ?? [];
+    if (!allowed.includes(newStatus)) {
+      throw Errors.conflict(
+        `Cannot transition from ${job.status} to ${newStatus}`,
+      );
+    }
+
+    // Build update data with timestamps
+    const updateData: Prisma.ServiceJobUpdateInput = {
+      status: newStatus,
+      ...(data.deliverables !== undefined && {
+        deliverables: data.deliverables as Prisma.InputJsonValue,
+      }),
+    };
+
+    if (newStatus === "ACCEPTED") {
+      updateData.acceptedAt = new Date();
+    } else if (newStatus === "DELIVERING") {
+      updateData.deliveredAt = new Date();
+    } else if (newStatus === "COMPLETED") {
+      updateData.completedAt = new Date();
+      updateData.deliverables =
+        (data.deliverables as Prisma.InputJsonValue) ?? Prisma.JsonNull;
+    }
+
+    if (newStatus === "COMPLETED") {
+      // Atomic update: job + offering stats in transaction
+      const latencyMs = Math.round(
+        Date.now() - (job.acceptedAt?.getTime() ?? job.createdAt.getTime()),
+      );
+
+      const [updatedJob] = await prisma.$transaction([
+        prisma.serviceJob.update({
+          where: { id: jobId },
+          data: updateData,
+          include: {
+            offering: { select: { slug: true, name: true, category: true } },
+            buyerAgent: { select: { id: true, name: true, pfpUrl: true } },
+          },
+        }),
+        prisma.$executeRaw`
+          UPDATE service_offerings
+          SET completed_jobs = completed_jobs + 1,
+              avg_latency_ms = CASE
+                WHEN completed_jobs = 0 THEN ${latencyMs}
+                ELSE ((avg_latency_ms * completed_jobs) + ${latencyMs}) / (completed_jobs + 1)
+              END,
+              updated_at = NOW()
+          WHERE id = ${job.offeringId}
+        `,
+      ]);
+
+      // 4. Buyback & Burn allocation: 2% of service payment → $RUN buyback
+      // TODO(phase-3): Execute actual buyback via Uniswap V3 router on Base
+      // const buybackAmount = job.priceUsdc * 2n / 100n;
+      // await executeBuybackAndBurn(buybackAmount);
+      logger.info(
+        { jobId, priceUsdc: job.priceUsdc.toString(), buybackBps: 200 },
+        "Service job completed — buyback allocation pending",
+      );
+
+      return successResponse({
+        ...updatedJob,
+        priceUsdc: updatedJob.priceUsdc.toString(),
+      });
+    }
+
+    // Non-COMPLETED transitions
+    const updatedJob = await prisma.serviceJob.update({
+      where: { id: jobId },
+      data: updateData,
+      include: {
+        offering: { select: { slug: true, name: true, category: true } },
+        buyerAgent: { select: { id: true, name: true, pfpUrl: true } },
+      },
+    });
+
+    logger.info(
+      { jobId, from: job.status, to: newStatus },
+      "Service job status transitioned",
+    );
+
+    return successResponse({
+      ...updatedJob,
+      priceUsdc: updatedJob.priceUsdc.toString(),
+    });
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
