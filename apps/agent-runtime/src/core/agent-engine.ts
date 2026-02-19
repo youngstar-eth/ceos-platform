@@ -3,7 +3,7 @@ import pino from 'pino';
 import { logger as rootLogger } from '../config.js';
 import { ContentPipeline } from './content-pipeline.js';
 import { AgentScheduler } from './scheduler.js';
-import { ServiceClient, type ServiceJob } from '../integrations/service-client.js';
+import { ServiceClient, type ServiceJob, type X402SignFn } from '../integrations/service-client.js';
 import type { ContentStrategy } from '../strategies/posting.js';
 
 export enum AgentState {
@@ -51,13 +51,25 @@ export class AgentEngine extends EventEmitter {
   private readonly pipeline: ContentPipeline;
   private readonly scheduler: AgentScheduler;
   private readonly apiBaseUrl: string;
+  private readonly signPayment: X402SignFn | undefined;
   private readonly logger: pino.Logger;
   private isShuttingDown = false;
 
-  constructor(pipeline: ContentPipeline, scheduler: AgentScheduler) {
+  /**
+   * @param pipeline - Content generation pipeline
+   * @param scheduler - Agent scheduling system
+   * @param signPayment - Optional x402 signing function from BaseChainClient.
+   *   When provided, agents can sign USDC payments for service purchases.
+   */
+  constructor(
+    pipeline: ContentPipeline,
+    scheduler: AgentScheduler,
+    signPayment?: X402SignFn,
+  ) {
     super();
     this.pipeline = pipeline;
     this.scheduler = scheduler;
+    this.signPayment = signPayment;
     this.apiBaseUrl = process.env.CEOS_API_URL ?? 'http://localhost:3000';
     this.logger = rootLogger.child({ module: 'AgentEngine' });
 
@@ -73,10 +85,12 @@ export class AgentEngine extends EventEmitter {
     }
 
     // V2: Each agent gets its own identity-bound ServiceClient
+    // Pass the x402 signing function so createJob() can sign USDC payments
     const serviceClient = new ServiceClient(
       this.apiBaseUrl,
       agentConfig.id,
       agentConfig.walletAddress,
+      this.signPayment,
     );
 
     const instance: AgentInstance = {
@@ -284,10 +298,18 @@ export class AgentEngine extends EventEmitter {
       'Best service offering selected',
     );
 
-    // 3. Create the service job
+    // 3. Create the service job (with x402 payment signing if available)
+    // The ServiceClient will sign an EIP-3009 USDC transfer and attach
+    // it as the X-PAYMENT header for the Pay-Before-Create flow.
+    const usdcContract = (process.env.NEXT_PUBLIC_USDC_CONTRACT ?? process.env.USDC_CONTRACT) as `0x${string}` | undefined;
+    const resourceWallet = process.env.X402_RESOURCE_WALLET as `0x${string}` | undefined;
+
     const job = await serviceClient.createJob({
       offeringSlug: best.slug,
       requirements,
+      priceUsdc: BigInt(best.priceUsdc),
+      payTo: resourceWallet,
+      usdcContract,
     });
 
     this.logger.info(

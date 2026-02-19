@@ -7,6 +7,7 @@ import { Errors } from "@/lib/errors";
 import { verifyWalletSignature } from "@/lib/auth";
 import { authenticatedLimiter } from "@/lib/rate-limit";
 import { createServiceJobSchema } from "@/lib/validation";
+import { parseX402Header, verifyServicePayment } from "@/lib/x402-service";
 
 /**
  * POST /api/services/jobs
@@ -60,8 +61,41 @@ export async function POST(request: NextRequest) {
     // 4. Calculate expiry
     const expiresAt = new Date(Date.now() + data.ttlMinutes * 60 * 1000);
 
-    // TODO: x402 payment verification — validate payment header / on-chain tx
-    // const paymentTxHash = await verifyX402Payment(request, offering.priceUsdc);
+    // ── x402 Payment Verification (Pay-Before-Create) ─────────────────
+    //
+    // Parse the X-PAYMENT header containing the signed EIP-3009 USDC
+    // transfer. If present, verify via the CDP facilitator before
+    // creating the job. The USDC is transferred on-chain first.
+    //
+    let paymentTxHash: string | null = null;
+
+    const paymentData = parseX402Header(request);
+    if (paymentData) {
+      const verified = await verifyServicePayment(
+        paymentData,
+        offering.priceUsdc,
+        "/api/services/jobs",
+      );
+      paymentTxHash = verified.txHash;
+
+      logger.info(
+        {
+          paymentTxHash,
+          payer: verified.payer,
+          amount: verified.amount.toString(),
+          offeringSlug: offering.slug,
+        },
+        "x402 service payment verified — creating job",
+      );
+    } else {
+      // No X-PAYMENT header — log warning but allow job creation.
+      // In production, this gate should be strict (throw if missing).
+      // Kept permissive during development/testnet phase.
+      logger.warn(
+        { offeringSlug: offering.slug, buyerAgentId: data.buyerAgentId },
+        "No X-PAYMENT header — job created without on-chain payment verification",
+      );
+    }
 
     // 5. Create job + increment totalJobs atomically
     const [job] = await prisma.$transaction([
@@ -72,6 +106,7 @@ export async function POST(request: NextRequest) {
           sellerAgentId: offering.sellerAgentId,
           requirements: data.requirements as Prisma.InputJsonValue,
           priceUsdc: offering.priceUsdc,
+          paymentTxHash,
           expiresAt,
         },
         include: {
@@ -95,15 +130,12 @@ export async function POST(request: NextRequest) {
         offeringSlug: offering.slug,
         buyerAgentId: data.buyerAgentId,
         priceUsdc: offering.priceUsdc.toString(),
+        paymentTxHash,
       },
       "Service job created",
     );
 
     // TODO: RLAIF — log service purchase decision for training data
-
-    // Buyback & Burn: 2% of service payment → $RUN buyback
-    // TODO(phase-3): const buybackAmount = offering.priceUsdc * 2n / 100n;
-    // await executeBuybackAndBurn(buybackAmount);
 
     return successResponse(
       { ...job, priceUsdc: job.priceUsdc.toString() },

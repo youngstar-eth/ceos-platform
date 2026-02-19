@@ -10,6 +10,66 @@ import { updateServiceJobSchema } from "@/lib/validation";
 
 type RouteContext = { params: Promise<{ jobId: string }> };
 
+// ── Buyback & Burn Stub ─────────────────────────────────────────────────────
+
+/**
+ * Queue a $RUN buyback-and-burn operation for the protocol fee.
+ *
+ * Phase 1 (current): Logs the buyback intent as a structured record
+ *   on the ServiceJob itself (buybackTxHash field) and emits a structured
+ *   log for downstream processing.
+ *
+ * Phase 2: Replace with BullMQ job that:
+ *   1. Calls FeeSplitter.distributeUSDCFees(agentTreasury, buybackAmount)
+ *   2. Triggers Uniswap V3 swap USDC → $RUN
+ *   3. Burns $RUN to dead address
+ *   4. Updates buybackTxHash with the actual on-chain tx
+ *
+ * @param jobId - The completed service job ID
+ * @param feeAmountUsdc - The 2% protocol fee in USDC micro-units
+ */
+async function queueBuybackJob(
+  jobId: string,
+  feeAmountUsdc: bigint,
+): Promise<void> {
+  if (feeAmountUsdc === 0n) return;
+
+  try {
+    // Mark the job with a synthetic buyback hash to signal the fee was calculated.
+    // Phase 2 will replace this with the real FeeSplitter transaction hash.
+    const syntheticBuybackHash = `buyback-pending-${jobId}-${Date.now()}`;
+
+    await prisma.serviceJob.update({
+      where: { id: jobId },
+      data: { buybackTxHash: syntheticBuybackHash },
+    });
+
+    logger.info(
+      {
+        jobId,
+        feeAmountUsdc: feeAmountUsdc.toString(),
+        buybackTxHash: syntheticBuybackHash,
+        // Phase 2 routing targets (from FeeSplitter):
+        // - 40% → Agent Treasury (growth reinvestment)
+        // - 40% → Protocol Treasury ($RUN buyback & burn)
+        // - 20% → Scout Fund (autonomous low-cap investment)
+      },
+      "Buyback & Burn fee allocation recorded — pending on-chain execution",
+    );
+  } catch (err) {
+    // Log but don't fail the job completion — the fee record is for
+    // auditability, and the actual buyback is a separate concern.
+    logger.error(
+      {
+        jobId,
+        feeAmountUsdc: feeAmountUsdc.toString(),
+        error: err instanceof Error ? err.message : String(err),
+      },
+      "Failed to record buyback fee allocation (job completion unaffected)",
+    );
+  }
+}
+
 /**
  * Valid state transitions (seller-driven except DISPUTED).
  */
@@ -190,13 +250,28 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         `,
       ]);
 
-      // 4. Buyback & Burn allocation: 2% of service payment → $RUN buyback
-      // TODO(phase-3): Execute actual buyback via Uniswap V3 router on Base
-      // const buybackAmount = job.priceUsdc * 2n / 100n;
-      // await executeBuybackAndBurn(buybackAmount);
+      // ── 2% Protocol Fee → $RUN Buyback & Burn ────────────────────────
+      //
+      // On every COMPLETED service job, 2% of the priceUsdc is allocated
+      // to the protocol's Buyback & Burn mechanism. This fee is routed
+      // through the FeeSplitter contract (40/40/20 split) on Base.
+      //
+      // Phase 1 (current): Calculate + log + queue as structured stub.
+      // Phase 2 (when FeeSplitter is deployed): Execute via Uniswap V3.
+      //
+      const PROTOCOL_FEE_BPS = 200; // 2% = 200 basis points
+      const buybackAmount = (job.priceUsdc * BigInt(PROTOCOL_FEE_BPS)) / 10_000n;
+
+      await queueBuybackJob(jobId, buybackAmount);
+
       logger.info(
-        { jobId, priceUsdc: job.priceUsdc.toString(), buybackBps: 200 },
-        "Service job completed — buyback allocation pending",
+        {
+          jobId,
+          priceUsdc: job.priceUsdc.toString(),
+          buybackAmount: buybackAmount.toString(),
+          protocolFeeBps: PROTOCOL_FEE_BPS,
+        },
+        "Service job completed — 2% buyback fee queued",
       );
 
       return successResponse({
