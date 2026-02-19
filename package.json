@@ -16,6 +16,7 @@
     "test:coverage": "cd contracts && forge coverage",
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
+    "seed:marketplace": "npx tsx scripts/seed-marketplace.ts",
     "db:studio": "prisma studio",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
