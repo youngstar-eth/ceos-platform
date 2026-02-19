@@ -71,12 +71,17 @@ async function queueBuybackJob(
 }
 
 /**
- * Valid state transitions (seller-driven except DISPUTED).
+ * Valid state transitions (seller-driven).
+ *
+ * DELIVERING → DISPUTED: Used by the autonomous executor when skill
+ * execution fails or times out. Signals to the buyer that the seller
+ * attempted fulfillment but encountered an error. The buyer can then
+ * request a refund or re-negotiate via the dispute resolution flow.
  */
 const VALID_TRANSITIONS: Record<ServiceJobStatus, ServiceJobStatus[]> = {
   CREATED: ["ACCEPTED", "REJECTED"],
   ACCEPTED: ["DELIVERING"],
-  DELIVERING: ["COMPLETED"],
+  DELIVERING: ["COMPLETED", "DISPUTED"],
   COMPLETED: [],
   REJECTED: [],
   DISPUTED: [],

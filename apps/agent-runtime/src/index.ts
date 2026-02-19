@@ -19,6 +19,11 @@ import { createScoutWorker } from '../workers/scout-worker.js';
 import { createTreasuryWorker } from '../workers/treasury-worker.js';
 import { createFeeDistributorWorker } from '../workers/fee-distributor.js';
 import { createServiceJobWorker, scheduleServiceJobMaintenance } from '../workers/service-job-worker.js';
+import {
+  createServiceExecutorWorker,
+  scheduleServiceExecutor,
+  type AgentExecutionContext,
+} from '../workers/service-executor.js';
 import { getStrategy } from './strategies/posting.js';
 
 const METRICS_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -308,9 +313,75 @@ async function bootstrap(): Promise<RuntimeContext> {
   await scheduleServiceJobMaintenance(serviceJobMaintenance.queue);
   logger.info('Service job maintenance worker initialized (expire check: 60s)');
 
+  // 5d. Initialize service job executor (autonomous fulfillment loop)
+  //
+  // The executor polls for ACCEPTED jobs assigned to locally-running agents,
+  // routes them through the SkillExecutor, and settles via the PATCH API.
+  // This closes the sovereign economy loop: agents fulfill jobs autonomously.
+  //
+  // getLocalAgents() is a live callback — it reads from the AgentEngine's
+  // running agents at poll time, so newly started agents are picked up
+  // automatically without restarting the executor.
+  const ceosApiUrl = process.env.CEOS_API_URL ?? 'http://localhost:3000';
+
+  // Load wallet addresses and personas from the database for the executor.
+  // Only agents that are currently running in THIS runtime instance and
+  // have a wallet address are eligible for autonomous job execution.
+  const getLocalAgentsWithWallets = async (): Promise<AgentExecutionContext[]> => {
+    const runningIds = engine.getRunningAgentIds();
+    if (runningIds.length === 0) return [];
+
+    const agents = await prisma.agent.findMany({
+      where: { id: { in: runningIds } },
+      select: { id: true, walletAddress: true, persona: true },
+    });
+
+    return agents
+      .filter((a) => a.walletAddress)
+      .map((a) => ({
+        agentId: a.id,
+        walletAddress: a.walletAddress!,
+        persona: typeof a.persona === 'string'
+          ? a.persona
+          : (a.persona as Record<string, unknown>)?.description as string ?? '',
+      }));
+  };
+
+  // Cache local agent contexts and refresh every poll cycle
+  let cachedAgentContexts: AgentExecutionContext[] = [];
+  const refreshAgentContexts = async () => {
+    try {
+      cachedAgentContexts = await getLocalAgentsWithWallets();
+    } catch (err) {
+      logger.error(
+        { error: err instanceof Error ? err.message : String(err) },
+        'Failed to refresh executor agent contexts',
+      );
+    }
+  };
+
+  // Initial load
+  await refreshAgentContexts();
+
+  const serviceExecutor = createServiceExecutorWorker(
+    redis,
+    skillExecutor,
+    () => cachedAgentContexts,
+    ceosApiUrl,
+  );
+  await scheduleServiceExecutor(serviceExecutor.queue);
+  logger.info('Service job executor initialized (poll: 15s)');
+
+  // Refresh agent contexts alongside the agent poll
+  const executorRefreshTimer = setInterval(() => {
+    if (!isShuttingDown) {
+      void refreshAgentContexts();
+    }
+  }, AGENT_POLL_INTERVAL_MS);
+
   logger.info('BullMQ workers initialized');
 
-  // 5d. Initialize metrics scheduling queue
+  // 5e. Initialize metrics scheduling queue
   const metricsQueue = new Queue('agent-metrics', { connection: redis });
   logger.info('Metrics scheduling queue initialized');
 
@@ -347,6 +418,7 @@ async function bootstrap(): Promise<RuntimeContext> {
       clearInterval(agentPollTimer);
       agentPollTimer = null;
     }
+    clearInterval(executorRefreshTimer);
 
     const shutdownTimeout = setTimeout(() => {
       logger.error('Shutdown timed out after 30s, forcing exit');
@@ -369,6 +441,7 @@ async function bootstrap(): Promise<RuntimeContext> {
       if (treasuryWorker) workerClosePromises.push(treasuryWorker.close());
       if (feeDistributorWorker) workerClosePromises.push(feeDistributorWorker.close());
       workerClosePromises.push(serviceJobMaintenance.shutdown());
+      workerClosePromises.push(serviceExecutor.shutdown());
       await Promise.allSettled(workerClosePromises);
       logger.info('Workers shutdown complete');
 
@@ -441,7 +514,7 @@ async function bootstrap(): Promise<RuntimeContext> {
   runtimeContext = context;
 
   const runningAgents = engine.getRunningAgentIds();
-  const activeWorkers = ['content', 'metrics', 'posting', 'scheduler'];
+  const activeWorkers = ['content', 'metrics', 'posting', 'scheduler', 'service-maintenance', 'service-executor'];
   if (scoutWorker) activeWorkers.push('scout', 'treasury', 'fee-distributor');
   logger.info({
     workers: activeWorkers,
