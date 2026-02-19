@@ -127,6 +127,58 @@ export const listAgentsQuerySchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Service Registry Schemas
+// ---------------------------------------------------------------------------
+
+export const createServiceOfferingSchema = z.object({
+  agentId: z.string().cuid(),
+  title: z.string().min(3).max(120),
+  description: z.string().min(10).max(2000),
+  category: z.string().min(2).max(50),
+  priceUsdc: z.string().regex(/^\d+$/, "Must be a non-negative integer string (micro-USDC)"),
+  ttlSeconds: z.coerce.number().int().min(60).max(86400).default(3600),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+export const updateServiceOfferingSchema = z.object({
+  title: z.string().min(3).max(120).optional(),
+  description: z.string().min(10).max(2000).optional(),
+  category: z.string().min(2).max(50).optional(),
+  priceUsdc: z.string().regex(/^\d+$/, "Must be a non-negative integer string (micro-USDC)").optional(),
+  ttlSeconds: z.coerce.number().int().min(60).max(86400).optional(),
+  status: z.enum(["DRAFT", "ACTIVE", "PAUSED", "RETIRED"]).optional(),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+export const serviceDiscoveryQuerySchema = z.object({
+  category: z.string().optional(),
+  minPrice: z.coerce.number().int().min(0).optional(),
+  maxPrice: z.coerce.number().int().optional(),
+  status: z.enum(["DRAFT", "ACTIVE", "PAUSED", "RETIRED"]).optional().default("ACTIVE"),
+  sortBy: z.enum(["price_asc", "price_desc", "newest", "rating"]).optional().default("newest"),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  q: z.string().max(200).optional(),
+});
+
+export const createServiceJobSchema = z.object({
+  serviceId: z.string().cuid(),
+  buyerAgentId: z.string().cuid(),
+  inputPayload: z.record(z.unknown()).optional(),
+});
+
+export const updateServiceJobSchema = z.object({
+  status: z.enum(["ACCEPTED", "DELIVERING", "COMPLETED", "REJECTED"]),
+  outputPayload: z.record(z.unknown()).optional(),
+  failedReason: z.string().max(500).optional(),
+});
+
+export const rateServiceJobSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().max(500).optional(),
+});
+
+// ---------------------------------------------------------------------------
 // Metrics query
 // ---------------------------------------------------------------------------
 

@@ -3,6 +3,7 @@ import pino from 'pino';
 import { logger as rootLogger } from '../config.js';
 import { ContentPipeline } from './content-pipeline.js';
 import { AgentScheduler } from './scheduler.js';
+import { ServiceClient, type ServiceJob } from '../integrations/service-client.js';
 import type { ContentStrategy } from '../strategies/posting.js';
 
 export enum AgentState {
@@ -46,6 +47,7 @@ export class AgentEngine extends EventEmitter {
   private readonly agents: Map<string, AgentInstance> = new Map();
   private readonly pipeline: ContentPipeline;
   private readonly scheduler: AgentScheduler;
+  private readonly serviceClient: ServiceClient;
   private readonly logger: pino.Logger;
   private isShuttingDown = false;
 
@@ -53,6 +55,7 @@ export class AgentEngine extends EventEmitter {
     super();
     this.pipeline = pipeline;
     this.scheduler = scheduler;
+    this.serviceClient = new ServiceClient();
     this.logger = rootLogger.child({ module: 'AgentEngine' });
 
     this.registerShutdownHandlers();
@@ -204,6 +207,70 @@ export class AgentEngine extends EventEmitter {
     this.emit('state-change', agentId, previousState, newState);
   }
 
+  /**
+   * Purchase a service from another agent on behalf of the given agent.
+   *
+   * This is the "sovereign action" — the agent autonomously decides to buy
+   * a service from the marketplace. The x402 payment is handled by the API.
+   *
+   * @param agentId - The buying agent's ID (must be running)
+   * @param serviceSlug - The service offering slug to purchase
+   * @param walletAddress - The buyer agent's MPC wallet address
+   * @param inputPayload - Optional input data for the service
+   * @param waitForResult - If true, polls until the job reaches a terminal state
+   */
+  async purchaseService(
+    agentId: string,
+    serviceSlug: string,
+    walletAddress: string,
+    inputPayload?: Record<string, unknown>,
+    waitForResult = false,
+  ): Promise<ServiceJob> {
+    const instance = this.agents.get(agentId);
+    if (!instance) {
+      throw new Error(`Agent ${agentId} is not running — cannot purchase service`);
+    }
+
+    this.logger.info(
+      { agentId, serviceSlug, walletAddress },
+      'Agent purchasing service',
+    );
+
+    // 1. Resolve service by slug
+    const service = await this.serviceClient.getService(serviceSlug);
+
+    // 2. Create the service job (purchase)
+    const job = await this.serviceClient.purchase(
+      service.id,
+      agentId,
+      walletAddress,
+      inputPayload,
+    );
+
+    this.logger.info(
+      {
+        agentId,
+        jobId: job.id,
+        serviceSlug,
+        pricePaidUsdc: job.pricePaidUsdc,
+      },
+      'Service purchased — job created',
+    );
+
+    // TODO: RLAIF — log purchase decision context for training data
+
+    // 3. Optionally wait for job completion
+    if (waitForResult) {
+      const completed = await this.serviceClient.waitForCompletion(
+        job.id,
+        walletAddress,
+      );
+      return completed;
+    }
+
+    return job;
+  }
+
   async shutdown(): Promise<void> {
     this.isShuttingDown = true;
     this.logger.info('Shutting down AgentEngine');
@@ -225,4 +292,4 @@ export class AgentEngine extends EventEmitter {
   }
 }
 
-export type { AgentConfig, AgentInstance, AgentEngineEvents };
+export type { AgentConfig, AgentInstance, AgentEngineEvents, ServiceJob };

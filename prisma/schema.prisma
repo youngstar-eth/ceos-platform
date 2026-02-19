@@ -49,6 +49,10 @@ model Agent {
   walletSessionLimit Decimal?  @default(50) @db.Decimal(18, 6) @map("wallet_session_limit")
   walletTxLimit      Decimal?  @default(10) @db.Decimal(18, 6) @map("wallet_tx_limit")
   walletAutoFund     Boolean   @default(false) @map("wallet_auto_fund")
+  walletId           String?   @unique @map("wallet_id")
+  cdpWalletData      String?   @map("cdp_wallet_data")
+  walletDataIV       String?   @map("wallet_data_iv")
+  walletAuthTag      String?   @map("wallet_auth_tag")
   lastEngagementRate Float?    @map("last_engagement_rate")
   lastFollowerCount  Int?      @map("last_follower_count")
   lastMetricsAt      DateTime? @map("last_metrics_at")
@@ -61,6 +65,8 @@ model Agent {
   walletTransactions WalletTransaction[]
   metricsSnapshots   AgentMetricsSnapshot[]
   scoutInvestments   ScoutInvestment[]
+  providedServices   ServiceOffering[]  @relation("ProvidedServices")
+  purchasedServices  ServiceJob[]       @relation("PurchasedServices")
 
   @@index([creatorAddress])
   @@index([status])
@@ -297,4 +303,73 @@ model FeeDistribution {
 
   @@index([status])
   @@map("fee_distributions")
+}
+
+// ─── Service Registry ──────────────────────────────────────────────────────────
+
+enum ServiceStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  RETIRED
+}
+
+enum ServiceJobStatus {
+  CREATED
+  ACCEPTED
+  DELIVERING
+  COMPLETED
+  REJECTED
+  DISPUTED
+  EXPIRED
+}
+
+model ServiceOffering {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  providerId  String        @map("provider_id")
+  title       String
+  description String
+  category    String        // e.g. "alpha-signal", "image-gen", "data-fetch", "engagement"
+  priceUsdc   BigInt        @map("price_usdc") // micro-USDC (6 decimals)
+  ttlSeconds  Int           @default(3600) @map("ttl_seconds")
+  status      ServiceStatus @default(DRAFT)
+  metadata    Json?         // capability manifest, input/output schema, etc.
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  provider    Agent         @relation("ProvidedServices", fields: [providerId], references: [id], onDelete: Cascade)
+  jobs        ServiceJob[]
+
+  @@index([providerId])
+  @@index([category])
+  @@index([status])
+  @@map("service_offerings")
+}
+
+model ServiceJob {
+  id              String           @id @default(cuid())
+  serviceId       String           @map("service_id")
+  buyerId         String           @map("buyer_id")
+  status          ServiceJobStatus @default(CREATED)
+  inputPayload    Json?            @map("input_payload")
+  outputPayload   Json?            @map("output_payload")
+  pricePaidUsdc   BigInt           @map("price_paid_usdc")
+  x402TxHash      String?          @map("x402_tx_hash")
+  failedReason    String?          @map("failed_reason")
+  rating          Int?             // 1-5 stars, set by buyer after completion
+  ratingComment   String?          @map("rating_comment")
+  expiresAt       DateTime         @map("expires_at")
+  completedAt     DateTime?        @map("completed_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  service         ServiceOffering  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  buyer           Agent            @relation("PurchasedServices", fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+  @@index([buyerId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("service_jobs")
 }

@@ -18,6 +18,7 @@ import { createSchedulerWorker } from '../workers/scheduler.js';
 import { createScoutWorker } from '../workers/scout-worker.js';
 import { createTreasuryWorker } from '../workers/treasury-worker.js';
 import { createFeeDistributorWorker } from '../workers/fee-distributor.js';
+import { createServiceJobWorker, scheduleServiceJobMaintenance } from '../workers/service-job-worker.js';
 import { getStrategy } from './strategies/posting.js';
 
 const METRICS_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -301,9 +302,14 @@ async function bootstrap(): Promise<RuntimeContext> {
     logger.info('Skipping financial workers — BaseChainClient not available');
   }
 
+  // 5c. Initialize service job maintenance worker (always-on, no chain dependency)
+  const serviceJobMaintenance = createServiceJobWorker(redis);
+  await scheduleServiceJobMaintenance(serviceJobMaintenance.queue);
+  logger.info('Service job maintenance worker initialized (expire check: 60s)');
+
   logger.info('BullMQ workers initialized');
 
-  // 5c. Initialize metrics scheduling queue
+  // 5d. Initialize metrics scheduling queue
   const metricsQueue = new Queue('agent-metrics', { connection: redis });
   logger.info('Metrics scheduling queue initialized');
 
@@ -361,6 +367,7 @@ async function bootstrap(): Promise<RuntimeContext> {
       if (scoutWorker) workerClosePromises.push(scoutWorker.close());
       if (treasuryWorker) workerClosePromises.push(treasuryWorker.close());
       if (feeDistributorWorker) workerClosePromises.push(feeDistributorWorker.close());
+      workerClosePromises.push(serviceJobMaintenance.shutdown());
       await Promise.allSettled(workerClosePromises);
       logger.info('Workers shutdown complete');
 
