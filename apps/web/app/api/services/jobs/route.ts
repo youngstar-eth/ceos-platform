@@ -2,18 +2,23 @@ import { NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
-import { successResponse, errorResponse, paginatedResponse } from "@/lib/api-utils";
+import { successResponse, errorResponse } from "@/lib/api-utils";
 import { Errors } from "@/lib/errors";
 import { verifyWalletSignature } from "@/lib/auth";
 import { authenticatedLimiter } from "@/lib/rate-limit";
-import { createServiceJobSchema, paginationSchema } from "@/lib/validation";
+import { createServiceJobSchema } from "@/lib/validation";
 
 /**
  * POST /api/services/jobs
  *
- * Create a new service job (purchase a service).
- * The buyer agent's creator must sign the request.
- * The x402 payment must be completed before or alongside this call.
+ * Create a service job (buyer purchases a service).
+ *
+ * Flow:
+ *   1. Resolve offering by slug, verify ACTIVE
+ *   2. Verify buyer agent belongs to caller
+ *   3. Prevent self-purchase
+ *   4. Calculate expiresAt from ttlMinutes
+ *   5. Create job + increment offering.totalJobs atomically
  */
 export async function POST(request: NextRequest) {
   try {
@@ -23,91 +28,85 @@ export async function POST(request: NextRequest) {
     const body: unknown = await request.json();
     const data = createServiceJobSchema.parse(body);
 
-    // Verify buyer agent exists and belongs to caller
+    // 1. Resolve offering by slug
+    const offering = await prisma.serviceOffering.findFirst({
+      where: { slug: data.offeringSlug, status: "ACTIVE" },
+      select: { id: true, sellerAgentId: true, priceUsdc: true, slug: true },
+    });
+
+    if (!offering) {
+      throw Errors.notFound("Service offering (or not ACTIVE)");
+    }
+
+    // 2. Verify buyer agent ownership
     const buyerAgent = await prisma.agent.findUnique({
       where: { id: data.buyerAgentId },
       select: { id: true, creatorAddress: true, status: true },
     });
 
-    if (!buyerAgent) {
-      throw Errors.notFound("Buyer Agent");
-    }
-
+    if (!buyerAgent) throw Errors.notFound("Buyer agent");
     if (buyerAgent.creatorAddress !== address) {
-      throw Errors.forbidden("Only the buyer agent's creator can purchase services");
+      throw Errors.forbidden("Only the agent creator can purchase services");
     }
-
     if (buyerAgent.status !== "ACTIVE") {
-      throw Errors.conflict("Buyer agent must be ACTIVE to purchase services");
+      throw Errors.conflict("Buyer agent must be ACTIVE");
     }
 
-    // Verify the service offering exists and is ACTIVE
-    const service = await prisma.serviceOffering.findUnique({
-      where: { id: data.serviceId },
-      select: { id: true, providerId: true, priceUsdc: true, ttlSeconds: true, status: true },
-    });
-
-    if (!service) {
-      throw Errors.notFound("ServiceOffering");
-    }
-
-    if (service.status !== "ACTIVE") {
-      throw Errors.conflict("Service offering is not ACTIVE");
-    }
-
-    // Prevent buying your own service
-    if (service.providerId === data.buyerAgentId) {
+    // 3. Prevent self-purchase
+    if (data.buyerAgentId === offering.sellerAgentId) {
       throw Errors.conflict("An agent cannot purchase its own service");
     }
 
-    // Calculate expiry based on service TTL
-    const expiresAt = new Date(Date.now() + service.ttlSeconds * 1000);
+    // 4. Calculate expiry
+    const expiresAt = new Date(Date.now() + data.ttlMinutes * 60 * 1000);
 
-    // TODO: x402 payment verification — verify payment header or on-chain tx
-    // For now, we trust the caller and record the job. In Phase 3, this will
-    // integrate with the x402 payment rail to verify micro-payment before creating the job.
+    // TODO: x402 payment verification — validate payment header / on-chain tx
+    // const paymentTxHash = await verifyX402Payment(request, offering.priceUsdc);
 
-    // 2% Buyback & Burn — deducted from service price
-    // TODO (Phase 5): Implement actual $RUN buyback on-chain
-    // const buybackAmount = service.priceUsdc * 2n / 100n;
-
-    const job = await prisma.serviceJob.create({
-      data: {
-        serviceId: service.id,
-        buyerId: data.buyerAgentId,
-        status: "CREATED",
-        inputPayload: (data.inputPayload ?? Prisma.JsonNull) as Prisma.InputJsonValue,
-        pricePaidUsdc: service.priceUsdc,
-        expiresAt,
-      },
-      include: {
-        service: {
-          select: { slug: true, title: true, category: true },
+    // 5. Create job + increment totalJobs atomically
+    const [job] = await prisma.$transaction([
+      prisma.serviceJob.create({
+        data: {
+          offeringId: offering.id,
+          buyerAgentId: data.buyerAgentId,
+          sellerAgentId: offering.sellerAgentId,
+          requirements: data.requirements as Prisma.InputJsonValue,
+          priceUsdc: offering.priceUsdc,
+          expiresAt,
         },
-        buyer: {
-          select: { id: true, name: true },
+        include: {
+          offering: {
+            select: { slug: true, name: true, category: true },
+          },
+          buyerAgent: {
+            select: { id: true, name: true, pfpUrl: true },
+          },
         },
-      },
-    });
+      }),
+      prisma.serviceOffering.update({
+        where: { id: offering.id },
+        data: { totalJobs: { increment: 1 } },
+      }),
+    ]);
 
     logger.info(
       {
         jobId: job.id,
-        serviceSlug: job.service.slug,
-        buyerId: data.buyerAgentId,
-        providerId: service.providerId,
-        priceUsdc: service.priceUsdc.toString(),
+        offeringSlug: offering.slug,
+        buyerAgentId: data.buyerAgentId,
+        priceUsdc: offering.priceUsdc.toString(),
       },
       "Service job created",
     );
 
     // TODO: RLAIF — log service purchase decision for training data
 
+    // Buyback & Burn: 2% of service payment → $RUN buyback
+    // TODO(phase-3): const buybackAmount = offering.priceUsdc * 2n / 100n;
+    // await executeBuybackAndBurn(buybackAmount);
+
     return successResponse(
-      {
-        ...job,
-        pricePaidUsdc: job.pricePaidUsdc.toString(),
-      },
+      { ...job, priceUsdc: job.priceUsdc.toString() },
       201,
     );
   } catch (err) {
@@ -118,14 +117,13 @@ export async function POST(request: NextRequest) {
 /**
  * GET /api/services/jobs
  *
- * List service jobs. Requires wallet auth.
- * Returns jobs where the caller is the buyer or provider agent's creator.
+ * List service jobs for the caller's agents.
  *
  * Query params:
- *   - agentId: filter by a specific agent (as buyer or provider)
- *   - status: filter by job status
- *   - role: "buyer" | "provider" — filter perspective
- *   - page / limit: pagination
+ *   agentId — filter by specific agent
+ *   status  — filter by job status
+ *   role    — "buyer" | "seller" (filter perspective)
+ *   page, limit — pagination
  */
 export async function GET(request: NextRequest) {
   try {
@@ -133,65 +131,72 @@ export async function GET(request: NextRequest) {
     authenticatedLimiter.check(address);
 
     const params = Object.fromEntries(request.nextUrl.searchParams);
-    const { page, limit } = paginationSchema.parse(params);
+    const page = Math.max(1, Number(params.page) || 1);
+    const limit = Math.min(50, Math.max(1, Number(params.limit) || 20));
     const skip = (page - 1) * limit;
 
-    const agentId = params.agentId;
-    const statusFilter = params.status;
-    const roleFilter = params.role; // "buyer" | "provider"
-
-    // Find all agents belonging to this wallet address
+    // Find all agents belonging to caller
     const userAgents = await prisma.agent.findMany({
       where: { creatorAddress: address },
       select: { id: true },
     });
-
     const userAgentIds = userAgents.map((a) => a.id);
 
     if (userAgentIds.length === 0) {
-      return paginatedResponse([], { page, limit, total: 0 });
+      return successResponse({ jobs: [], total: 0, page, limit });
     }
 
-    // Build filter: only show jobs involving the caller's agents
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: any = {};
+    // Build where clause
+    const where: Prisma.ServiceJobWhereInput = {};
+
+    const role = params.role as string | undefined;
+    const agentId = params.agentId as string | undefined;
+    const status = params.status as string | undefined;
 
     if (agentId) {
-      // Must be one of caller's agents
+      // Verify requested agent belongs to caller
       if (!userAgentIds.includes(agentId)) {
-        throw Errors.forbidden("Agent does not belong to caller");
+        throw Errors.forbidden("Agent does not belong to you");
       }
-
-      if (roleFilter === "buyer") {
-        where.buyerId = agentId;
-      } else if (roleFilter === "provider") {
-        where.service = { providerId: agentId };
+      if (role === "seller") {
+        where.sellerAgentId = agentId;
+      } else if (role === "buyer") {
+        where.buyerAgentId = agentId;
       } else {
         where.OR = [
-          { buyerId: agentId },
-          { service: { providerId: agentId } },
+          { buyerAgentId: agentId },
+          { sellerAgentId: agentId },
         ];
       }
     } else {
-      // All jobs involving any of caller's agents
-      where.OR = [
-        { buyerId: { in: userAgentIds } },
-        { service: { providerId: { in: userAgentIds } } },
-      ];
+      // All jobs involving caller's agents
+      if (role === "seller") {
+        where.sellerAgentId = { in: userAgentIds };
+      } else if (role === "buyer") {
+        where.buyerAgentId = { in: userAgentIds };
+      } else {
+        where.OR = [
+          { buyerAgentId: { in: userAgentIds } },
+          { sellerAgentId: { in: userAgentIds } },
+        ];
+      }
     }
 
-    if (statusFilter) {
-      where.status = statusFilter;
+    if (status) {
+      where.status = status as Prisma.EnumServiceJobStatusFilter;
     }
 
     const [jobs, total] = await Promise.all([
       prisma.serviceJob.findMany({
         where,
         include: {
-          service: {
-            select: { slug: true, title: true, category: true, providerId: true },
+          offering: {
+            select: { slug: true, name: true, category: true },
           },
-          buyer: {
+          buyerAgent: {
+            select: { id: true, name: true, pfpUrl: true },
+          },
+          sellerAgent: {
             select: { id: true, name: true, pfpUrl: true },
           },
         },
@@ -204,10 +209,10 @@ export async function GET(request: NextRequest) {
 
     const serialized = jobs.map((j) => ({
       ...j,
-      pricePaidUsdc: j.pricePaidUsdc.toString(),
+      priceUsdc: j.priceUsdc.toString(),
     }));
 
-    return paginatedResponse(serialized, { page, limit, total });
+    return successResponse({ jobs: serialized, total, page, limit });
   } catch (err) {
     return errorResponse(err);
   }

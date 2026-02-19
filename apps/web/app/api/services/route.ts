@@ -9,10 +9,10 @@ import { authenticatedLimiter, publicLimiter, getClientIp } from "@/lib/rate-lim
 import { createServiceOfferingSchema, paginationSchema } from "@/lib/validation";
 
 /**
- * Helper: generate a URL-safe slug from a title + random suffix.
+ * Helper: generate a URL-safe slug from a name + random suffix.
  */
-function generateSlug(title: string): string {
-  const base = title
+function generateSlug(name: string): string {
+  const base = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
@@ -24,8 +24,7 @@ function generateSlug(title: string): string {
 /**
  * GET /api/services
  *
- * List service offerings. Public endpoint, no auth required.
- * Supports pagination via ?page=1&limit=20
+ * List active service offerings. Public endpoint, paginated.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -39,10 +38,9 @@ export async function GET(request: NextRequest) {
       prisma.serviceOffering.findMany({
         where: { status: "ACTIVE" },
         include: {
-          provider: {
+          sellerAgent: {
             select: { id: true, name: true, pfpUrl: true, walletAddress: true },
           },
-          _count: { select: { jobs: true } },
         },
         orderBy: { createdAt: "desc" },
         skip,
@@ -66,8 +64,8 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/services
  *
- * Create a new service offering. Requires wallet auth.
- * The caller must be the creator of the provider agent.
+ * Register a new service offering. Requires wallet auth.
+ * The caller must be the creator of the seller agent.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -79,45 +77,52 @@ export async function POST(request: NextRequest) {
 
     // Verify the agent exists and belongs to caller
     const agent = await prisma.agent.findUnique({
-      where: { id: data.agentId },
+      where: { id: data.sellerAgentId },
       select: { id: true, creatorAddress: true, status: true },
     });
 
-    if (!agent) {
-      throw Errors.notFound("Agent");
-    }
-
+    if (!agent) throw Errors.notFound("Agent");
     if (agent.creatorAddress !== address) {
       throw Errors.forbidden("Only the agent creator can list services");
     }
-
     if (agent.status !== "ACTIVE") {
       throw Errors.conflict("Agent must be ACTIVE to offer services");
     }
 
-    const slug = generateSlug(data.title);
+    // Slug: use client-provided or generate from name
+    const slug = data.slug ?? generateSlug(data.name);
+
+    // Check slug uniqueness
+    const existing = await prisma.serviceOffering.findUnique({
+      where: { slug },
+    });
+    if (existing) {
+      throw Errors.conflict(`Slug "${slug}" is already taken`);
+    }
 
     const offering = await prisma.serviceOffering.create({
       data: {
         slug,
-        providerId: data.agentId,
-        title: data.title,
+        sellerAgentId: data.sellerAgentId,
+        name: data.name,
         description: data.description,
         category: data.category,
         priceUsdc: BigInt(data.priceUsdc),
-        ttlSeconds: data.ttlSeconds,
-        status: "DRAFT",
-        metadata: (data.metadata ?? Prisma.JsonNull) as Prisma.InputJsonValue,
+        pricingModel: data.pricingModel,
+        inputSchema: data.inputSchema as Prisma.InputJsonValue,
+        outputSchema: data.outputSchema as Prisma.InputJsonValue,
+        maxLatencyMs: data.maxLatencyMs,
+        status: "ACTIVE",
       },
       include: {
-        provider: {
+        sellerAgent: {
           select: { id: true, name: true, pfpUrl: true },
         },
       },
     });
 
     logger.info(
-      { slug, agentId: data.agentId, category: data.category },
+      { slug, agentId: data.sellerAgentId, category: data.category },
       "Service offering created",
     );
 

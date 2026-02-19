@@ -88,6 +88,7 @@ async function loadAndScheduleAgents(
           persona,
           signerUuid: agent.signerUuid,
           fid: agent.fid ?? 0,
+          walletAddress: agent.walletAddress ?? '',
           strategy,
         });
 

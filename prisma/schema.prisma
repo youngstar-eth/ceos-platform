@@ -65,8 +65,9 @@ model Agent {
   walletTransactions WalletTransaction[]
   metricsSnapshots   AgentMetricsSnapshot[]
   scoutInvestments   ScoutInvestment[]
-  providedServices   ServiceOffering[]  @relation("ProvidedServices")
-  purchasedServices  ServiceJob[]       @relation("PurchasedServices")
+  sellerOfferings  ServiceOffering[] @relation("SellerOfferings")
+  buyerJobs        ServiceJob[]      @relation("BuyerJobs")
+  sellerJobs       ServiceJob[]      @relation("SellerJobs")
 
   @@index([creatorAddress])
   @@index([status])
@@ -305,13 +306,14 @@ model FeeDistribution {
   @@map("fee_distributions")
 }
 
-// ─── Service Registry ──────────────────────────────────────────────────────────
+// ============================================================
+// Service Registry — Agent-to-Agent Economy Layer
+// ============================================================
 
 enum ServiceStatus {
-  DRAFT
   ACTIVE
   PAUSED
-  RETIRED
+  DELISTED
 }
 
 enum ServiceJobStatus {
@@ -325,51 +327,72 @@ enum ServiceJobStatus {
 }
 
 model ServiceOffering {
-  id          String        @id @default(cuid())
-  slug        String        @unique
-  providerId  String        @map("provider_id")
-  title       String
-  description String
-  category    String        // e.g. "alpha-signal", "image-gen", "data-fetch", "engagement"
-  priceUsdc   BigInt        @map("price_usdc") // micro-USDC (6 decimals)
-  ttlSeconds  Int           @default(3600) @map("ttl_seconds")
-  status      ServiceStatus @default(DRAFT)
-  metadata    Json?         // capability manifest, input/output schema, etc.
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
+  id              String        @id @default(cuid())
+  sellerAgentId   String        @map("seller_agent_id")
 
-  provider    Agent         @relation("ProvidedServices", fields: [providerId], references: [id], onDelete: Cascade)
-  jobs        ServiceJob[]
+  name            String
+  slug            String        @unique
+  description     String        @db.Text
+  category        String        // content | analysis | trading | engagement | networking
 
-  @@index([providerId])
-  @@index([category])
-  @@index([status])
+  priceUsdc       BigInt        @map("price_usdc") // micro-USDC (6 decimals)
+  pricingModel    String        @default("per_call") @map("pricing_model")
+
+  inputSchema     Json          @map("input_schema")
+  outputSchema    Json          @map("output_schema")
+
+  maxLatencyMs    Int           @default(30000) @map("max_latency_ms")
+  status          ServiceStatus @default(ACTIVE)
+
+  totalJobs       Int           @default(0) @map("total_jobs")
+  completedJobs   Int           @default(0) @map("completed_jobs")
+  avgRating       Float?        @map("avg_rating")
+  avgLatencyMs    Int?          @map("avg_latency_ms")
+
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  sellerAgent     Agent         @relation("SellerOfferings", fields: [sellerAgentId], references: [id])
+  jobs            ServiceJob[]
+
+  @@index([category, status])
+  @@index([sellerAgentId])
+  @@index([priceUsdc])
   @@map("service_offerings")
 }
 
 model ServiceJob {
   id              String           @id @default(cuid())
-  serviceId       String           @map("service_id")
-  buyerId         String           @map("buyer_id")
+  offeringId      String           @map("offering_id")
+  buyerAgentId    String           @map("buyer_agent_id")
+  sellerAgentId   String           @map("seller_agent_id")
+
   status          ServiceJobStatus @default(CREATED)
-  inputPayload    Json?            @map("input_payload")
-  outputPayload   Json?            @map("output_payload")
-  pricePaidUsdc   BigInt           @map("price_paid_usdc")
-  x402TxHash      String?          @map("x402_tx_hash")
-  failedReason    String?          @map("failed_reason")
-  rating          Int?             // 1-5 stars, set by buyer after completion
-  ratingComment   String?          @map("rating_comment")
-  expiresAt       DateTime         @map("expires_at")
+
+  requirements    Json
+  deliverables    Json?
+
+  priceUsdc       BigInt           @map("price_usdc")
+  paymentTxHash   String?          @map("payment_tx_hash")
+  buybackTxHash   String?          @map("buyback_tx_hash")
+
+  buyerRating     Int?             @map("buyer_rating")
+  buyerFeedback   String?          @map("buyer_feedback")
+
+  acceptedAt      DateTime?        @map("accepted_at")
+  deliveredAt     DateTime?        @map("delivered_at")
   completedAt     DateTime?        @map("completed_at")
+  expiresAt       DateTime         @map("expires_at")
+
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
 
-  service         ServiceOffering  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  buyer           Agent            @relation("PurchasedServices", fields: [buyerId], references: [id], onDelete: Cascade)
+  offering        ServiceOffering  @relation(fields: [offeringId], references: [id])
+  buyerAgent      Agent            @relation("BuyerJobs", fields: [buyerAgentId], references: [id])
+  sellerAgent     Agent            @relation("SellerJobs", fields: [sellerAgentId], references: [id])
 
-  @@index([serviceId])
-  @@index([buyerId])
-  @@index([status])
-  @@index([expiresAt])
+  @@index([buyerAgentId, status])
+  @@index([sellerAgentId, status])
+  @@index([status, expiresAt])
   @@map("service_jobs")
 }

@@ -1,23 +1,21 @@
 import { NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { errorResponse, paginatedResponse } from "@/lib/api-utils";
+import { successResponse, errorResponse } from "@/lib/api-utils";
 import { publicLimiter, getClientIp } from "@/lib/rate-limit";
 import { serviceDiscoveryQuerySchema } from "@/lib/validation";
 
 /**
  * GET /api/services/discover
  *
- * Advanced service discovery with filtering, sorting, and full-text search.
- * Public endpoint — no wallet auth required.
+ * Discovery endpoint with filtering, search, sorting, and pagination.
  *
  * Query params:
- *   - category: filter by service category
- *   - minPrice / maxPrice: price range filter (micro-USDC)
- *   - status: filter by status (default: ACTIVE)
- *   - sortBy: price_asc | price_desc | newest | rating
- *   - q: full-text search on title + description
- *   - page / limit: pagination
+ *   category    — filter by category
+ *   maxPrice    — max micro-USDC price
+ *   capability  — case-insensitive search on name + description
+ *   sort        — rating | price_asc | price_desc | newest | jobs_completed
+ *   page, limit — pagination (max 50)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -26,45 +24,37 @@ export async function GET(request: NextRequest) {
     const params = Object.fromEntries(request.nextUrl.searchParams);
     const query = serviceDiscoveryQuerySchema.parse(params);
 
-    // Build WHERE clause
-    const where: Prisma.ServiceOfferingWhereInput = {
-      status: query.status,
-    };
+    const where: Prisma.ServiceOfferingWhereInput = { status: "ACTIVE" };
 
     if (query.category) {
       where.category = query.category;
     }
 
-    if (query.minPrice !== undefined || query.maxPrice !== undefined) {
-      where.priceUsdc = {};
-      if (query.minPrice !== undefined) {
-        where.priceUsdc.gte = BigInt(query.minPrice);
-      }
-      if (query.maxPrice !== undefined) {
-        where.priceUsdc.lte = BigInt(query.maxPrice);
-      }
+    if (query.maxPrice !== undefined) {
+      where.priceUsdc = { lte: BigInt(query.maxPrice) };
     }
 
-    if (query.q) {
+    if (query.capability) {
       where.OR = [
-        { title: { contains: query.q, mode: "insensitive" } },
-        { description: { contains: query.q, mode: "insensitive" } },
+        { name: { contains: query.capability, mode: "insensitive" } },
+        { description: { contains: query.capability, mode: "insensitive" } },
       ];
     }
 
-    // Build ORDER BY clause
+    // Sort mapping
     let orderBy: Prisma.ServiceOfferingOrderByWithRelationInput;
-    switch (query.sortBy) {
+    switch (query.sort) {
       case "price_asc":
         orderBy = { priceUsdc: "asc" };
         break;
       case "price_desc":
         orderBy = { priceUsdc: "desc" };
         break;
+      case "jobs_completed":
+        orderBy = { completedJobs: "desc" };
+        break;
       case "rating":
-        // Sort by number of completed jobs as a proxy for popularity.
-        // True rating-based sort would require a computed field or subquery.
-        orderBy = { jobs: { _count: "desc" } };
+        orderBy = { avgRating: { sort: "desc", nulls: "last" } };
         break;
       case "newest":
       default:
@@ -74,14 +64,13 @@ export async function GET(request: NextRequest) {
 
     const skip = (query.page - 1) * query.limit;
 
-    const [services, total] = await Promise.all([
+    const [offerings, total] = await Promise.all([
       prisma.serviceOffering.findMany({
         where,
         include: {
-          provider: {
-            select: { id: true, name: true, pfpUrl: true, walletAddress: true },
+          sellerAgent: {
+            select: { id: true, name: true, walletAddress: true },
           },
-          _count: { select: { jobs: { where: { status: "COMPLETED" } } } },
         },
         orderBy,
         skip,
@@ -90,16 +79,26 @@ export async function GET(request: NextRequest) {
       prisma.serviceOffering.count({ where }),
     ]);
 
-    // Serialize BigInt to string for JSON transport
-    const serialized = services.map((s) => ({
-      ...s,
-      priceUsdc: s.priceUsdc.toString(),
+    const serialized = offerings.map((o) => ({
+      id: o.id,
+      name: o.name,
+      slug: o.slug,
+      category: o.category,
+      priceUsdc: o.priceUsdc.toString(),
+      pricingModel: o.pricingModel,
+      avgRating: o.avgRating,
+      completedJobs: o.completedJobs,
+      totalJobs: o.totalJobs,
+      maxLatencyMs: o.maxLatencyMs,
+      avgLatencyMs: o.avgLatencyMs,
+      sellerAgent: o.sellerAgent,
     }));
 
-    return paginatedResponse(serialized, {
+    return successResponse({
+      offerings: serialized,
+      total,
       page: query.page,
       limit: query.limit,
-      total,
     });
   } catch (err) {
     return errorResponse(err);

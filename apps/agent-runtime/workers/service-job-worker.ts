@@ -6,6 +6,10 @@
  * 2. Future: Dispute resolution, auto-refunds, etc.
  *
  * Runs on a repeatable schedule (every 60 seconds) to catch expired jobs.
+ *
+ * V2 Changes:
+ * - Removed `failedReason` from EXPIRED update (field no longer exists)
+ * - Status update is now the only data written on expiration
  */
 import { Worker, Queue, type Job } from 'bullmq';
 import { PrismaClient } from '@prisma/client';
@@ -89,7 +93,9 @@ export function createServiceJobWorker(connection: Redis) {
  * Find and expire all service jobs that have exceeded their TTL.
  *
  * Only jobs in CREATED or ACCEPTED status can be expired.
- * DELIVERING jobs are not expired — the provider is actively working.
+ * DELIVERING jobs are not expired — the seller is actively working.
+ *
+ * V2: No `failedReason` field — only status is updated to EXPIRED.
  */
 async function expireOverdueJobs(
   prisma: PrismaClient,
@@ -105,7 +111,6 @@ async function expireOverdueJobs(
     },
     data: {
       status: 'EXPIRED',
-      failedReason: 'Job expired — TTL exceeded without completion',
     },
   });
 

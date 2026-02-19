@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { Prisma } from "@prisma/client";
+import { Prisma, ServiceJobStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { successResponse, errorResponse } from "@/lib/api-utils";
@@ -7,13 +7,11 @@ import { Errors } from "@/lib/errors";
 import { verifyWalletSignature } from "@/lib/auth";
 import { authenticatedLimiter } from "@/lib/rate-limit";
 import { updateServiceJobSchema } from "@/lib/validation";
-import type { ServiceJobStatus } from "@prisma/client";
 
 type RouteContext = { params: Promise<{ jobId: string }> };
 
 /**
- * Valid state transitions for service jobs.
- * Only the provider can transition most states; the BullMQ worker handles EXPIRED.
+ * Valid state transitions (seller-driven except DISPUTED).
  */
 const VALID_TRANSITIONS: Record<ServiceJobStatus, ServiceJobStatus[]> = {
   CREATED: ["ACCEPTED", "REJECTED"],
@@ -28,51 +26,60 @@ const VALID_TRANSITIONS: Record<ServiceJobStatus, ServiceJobStatus[]> = {
 /**
  * GET /api/services/jobs/[jobId]
  *
- * Fetch a single service job by ID. Requires auth — must be buyer or provider's creator.
+ * Fetch a single job. Caller must be buyer or seller creator.
  */
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const address = await verifyWalletSignature(request);
     authenticatedLimiter.check(address);
-
     const { jobId } = await context.params;
 
     const job = await prisma.serviceJob.findUnique({
       where: { id: jobId },
       include: {
-        service: {
+        offering: {
           include: {
-            provider: {
-              select: { id: true, name: true, pfpUrl: true, creatorAddress: true },
+            sellerAgent: {
+              select: {
+                id: true,
+                name: true,
+                pfpUrl: true,
+                walletAddress: true,
+                creatorAddress: true,
+              },
             },
           },
         },
-        buyer: {
-          select: { id: true, name: true, pfpUrl: true, creatorAddress: true },
+        buyerAgent: {
+          select: {
+            id: true,
+            name: true,
+            pfpUrl: true,
+            walletAddress: true,
+            creatorAddress: true,
+          },
         },
       },
     });
 
-    if (!job) {
-      throw Errors.notFound("ServiceJob");
-    }
+    if (!job) throw Errors.notFound("Service job");
 
-    // Only buyer's creator or provider's creator can view
-    const isBuyerCreator = job.buyer.creatorAddress === address;
-    const isProviderCreator = job.service.provider.creatorAddress === address;
-
-    if (!isBuyerCreator && !isProviderCreator) {
+    // Auth: must be buyer or seller creator
+    const isBuyerCreator = job.buyerAgent.creatorAddress === address;
+    const isSellerCreator = job.offering.sellerAgent.creatorAddress === address;
+    if (!isBuyerCreator && !isSellerCreator) {
       throw Errors.forbidden("Not authorized to view this job");
     }
 
-    // Strip internal fields before returning
-    const { buyer: { creatorAddress: _ba, ...buyerPublic }, service: { provider: { creatorAddress: _pa, ...providerPublic }, ...servicePublic }, ...jobFields } = job;
+    // Strip sensitive creatorAddress from response
+    const { creatorAddress: _bc, ...buyerSafe } = job.buyerAgent;
+    const { creatorAddress: _sc, ...sellerSafe } = job.offering.sellerAgent;
 
     return successResponse({
-      ...jobFields,
-      pricePaidUsdc: jobFields.pricePaidUsdc.toString(),
-      service: { ...servicePublic, provider: providerPublic },
-      buyer: buyerPublic,
+      ...job,
+      priceUsdc: job.priceUsdc.toString(),
+      buyerAgent: buyerSafe,
+      offering: { ...job.offering, sellerAgent: sellerSafe },
     });
   } catch (err) {
     return errorResponse(err);
@@ -82,87 +89,140 @@ export async function GET(request: NextRequest, context: RouteContext) {
 /**
  * PATCH /api/services/jobs/[jobId]
  *
- * Transition a service job's status. Only the PROVIDER's creator can do this.
- * Valid transitions follow the state machine defined in VALID_TRANSITIONS.
+ * Transition job status. Only the seller agent's creator can transition.
+ *
+ * State machine:
+ *   CREATED  → ACCEPTED | REJECTED
+ *   ACCEPTED → DELIVERING
+ *   DELIVERING → COMPLETED
+ *   (COMPLETED, REJECTED, DISPUTED, EXPIRED are terminal)
+ *
+ * On COMPLETED: update offering stats (completedJobs, avgLatencyMs) in $transaction.
  */
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const address = await verifyWalletSignature(request);
     authenticatedLimiter.check(address);
-
     const { jobId } = await context.params;
+
     const body: unknown = await request.json();
     const data = updateServiceJobSchema.parse(body);
+    const newStatus = data.status as ServiceJobStatus;
 
-    // Fetch job with provider info
+    // Fetch job with offering + seller agent
     const job = await prisma.serviceJob.findUnique({
       where: { id: jobId },
       include: {
-        service: {
+        offering: {
           include: {
-            provider: { select: { creatorAddress: true, id: true } },
+            sellerAgent: { select: { creatorAddress: true } },
           },
         },
       },
     });
 
-    if (!job) {
-      throw Errors.notFound("ServiceJob");
+    if (!job) throw Errors.notFound("Service job");
+
+    // Only seller creator can transition
+    if (job.offering.sellerAgent.creatorAddress !== address) {
+      throw Errors.forbidden("Only the seller agent's creator can update job status");
     }
 
-    // Only the service provider's creator can transition the job
-    if (job.service.provider.creatorAddress !== address) {
-      throw Errors.forbidden("Only the service provider can update job status");
+    // Check job hasn't expired (unless rejecting)
+    if (
+      job.expiresAt < new Date() &&
+      job.status !== "EXPIRED" &&
+      newStatus !== "REJECTED"
+    ) {
+      throw Errors.conflict("Job has expired");
     }
 
-    // Validate state transition
-    const allowedNext = VALID_TRANSITIONS[job.status] ?? [];
-    if (!allowedNext.includes(data.status)) {
+    // Validate transition
+    const allowed = VALID_TRANSITIONS[job.status] ?? [];
+    if (!allowed.includes(newStatus)) {
       throw Errors.conflict(
-        `Cannot transition from ${job.status} to ${data.status}. ` +
-        `Allowed: ${allowedNext.join(", ") || "none"}`,
+        `Cannot transition from ${job.status} to ${newStatus}`,
       );
     }
 
-    // Check if job has expired
-    if (new Date() > job.expiresAt && data.status !== "REJECTED") {
-      throw Errors.conflict("Job has expired — cannot transition");
+    // Build update data with timestamps
+    const updateData: Prisma.ServiceJobUpdateInput = {
+      status: newStatus,
+      ...(data.deliverables !== undefined && {
+        deliverables: data.deliverables as Prisma.InputJsonValue,
+      }),
+    };
+
+    if (newStatus === "ACCEPTED") {
+      updateData.acceptedAt = new Date();
+    } else if (newStatus === "DELIVERING") {
+      updateData.deliveredAt = new Date();
+    } else if (newStatus === "COMPLETED") {
+      updateData.completedAt = new Date();
+      updateData.deliverables =
+        (data.deliverables as Prisma.InputJsonValue) ?? Prisma.JsonNull;
     }
 
-    const updated = await prisma.serviceJob.update({
+    if (newStatus === "COMPLETED") {
+      // Atomic update: job + offering stats in transaction
+      const latencyMs = Math.round(
+        Date.now() - (job.acceptedAt?.getTime() ?? job.createdAt.getTime()),
+      );
+
+      const [updatedJob] = await prisma.$transaction([
+        prisma.serviceJob.update({
+          where: { id: jobId },
+          data: updateData,
+          include: {
+            offering: { select: { slug: true, name: true, category: true } },
+            buyerAgent: { select: { id: true, name: true, pfpUrl: true } },
+          },
+        }),
+        prisma.$executeRaw`
+          UPDATE service_offerings
+          SET completed_jobs = completed_jobs + 1,
+              avg_latency_ms = CASE
+                WHEN completed_jobs = 0 THEN ${latencyMs}
+                ELSE ((avg_latency_ms * completed_jobs) + ${latencyMs}) / (completed_jobs + 1)
+              END,
+              updated_at = NOW()
+          WHERE id = ${job.offeringId}
+        `,
+      ]);
+
+      // 4. Buyback & Burn allocation: 2% of service payment → $RUN buyback
+      // TODO(phase-3): Execute actual buyback via Uniswap V3 router on Base
+      // const buybackAmount = job.priceUsdc * 2n / 100n;
+      // await executeBuybackAndBurn(buybackAmount);
+      logger.info(
+        { jobId, priceUsdc: job.priceUsdc.toString(), buybackBps: 200 },
+        "Service job completed — buyback allocation pending",
+      );
+
+      return successResponse({
+        ...updatedJob,
+        priceUsdc: updatedJob.priceUsdc.toString(),
+      });
+    }
+
+    // Non-COMPLETED transitions
+    const updatedJob = await prisma.serviceJob.update({
       where: { id: jobId },
-      data: {
-        status: data.status,
-        ...(data.outputPayload !== undefined && { outputPayload: data.outputPayload as Prisma.InputJsonValue }),
-        ...(data.failedReason !== undefined && { failedReason: data.failedReason }),
-        ...(data.status === "COMPLETED" && { completedAt: new Date() }),
-      },
+      data: updateData,
       include: {
-        service: {
-          select: { slug: true, title: true, providerId: true },
-        },
-        buyer: {
-          select: { id: true, name: true },
-        },
+        offering: { select: { slug: true, name: true, category: true } },
+        buyerAgent: { select: { id: true, name: true, pfpUrl: true } },
       },
     });
 
     logger.info(
-      {
-        jobId,
-        from: job.status,
-        to: data.status,
-        providerId: job.service.provider.id,
-      },
+      { jobId, from: job.status, to: newStatus },
       "Service job status transitioned",
     );
 
-    // TODO: RLAIF — log state transition for training data
-    // TODO (Phase 5): On COMPLETED, trigger $RUN buyback & burn (2% of pricePaidUsdc)
-
     return successResponse({
-      ...updated,
-      pricePaidUsdc: updated.pricePaidUsdc.toString(),
+      ...updatedJob,
+      priceUsdc: updatedJob.priceUsdc.toString(),
     });
   } catch (err) {
     return errorResponse(err);

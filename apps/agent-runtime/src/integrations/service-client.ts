@@ -1,9 +1,16 @@
 /**
- * ServiceClient — Agent-to-Agent Service Purchase SDK
+ * ServiceClient — Agent-to-Agent Service Purchase SDK (V2)
  *
  * Used by the agent runtime to discover, purchase, and manage
  * service offerings from other agents. All calls go through the
  * ceos.run API and are authenticated via wallet signature headers.
+ *
+ * V2 Changes:
+ * - Constructor-bound identity: (baseUrl, agentId, walletAddress)
+ * - Capability-based discovery (replaces free-text `q`)
+ * - Slug-based job creation with client-side TTL
+ * - Denormalized stats on offerings (no _count joins)
+ * - Seller denormalization on jobs
  *
  * This is the "consumer side" of the x402 Agent Economy.
  */
@@ -15,47 +22,57 @@ import { logger as rootLogger } from '../config.js';
 export interface ServiceOffering {
   id: string;
   slug: string;
-  providerId: string;
-  title: string;
+  sellerAgentId: string;
+  name: string;
   description: string;
   category: string;
-  priceUsdc: string; // BigInt serialized as string
-  ttlSeconds: number;
+  priceUsdc: string; // BigInt serialized as string (micro-USDC)
+  pricingModel: string;
+  inputSchema: Record<string, unknown>;
+  outputSchema: Record<string, unknown>;
+  maxLatencyMs: number;
   status: string;
-  metadata: Record<string, unknown> | null;
-  provider: {
+  totalJobs: number;
+  completedJobs: number;
+  avgRating: number | null;
+  avgLatencyMs: number | null;
+  sellerAgent: {
     id: string;
     name: string;
     pfpUrl: string | null;
     walletAddress: string | null;
   };
-  _count?: { jobs: number };
+  createdAt: string;
 }
 
 export interface ServiceJob {
   id: string;
-  serviceId: string;
-  buyerId: string;
+  offeringId: string;
+  buyerAgentId: string;
+  sellerAgentId: string;
   status: string;
-  inputPayload: Record<string, unknown> | null;
-  outputPayload: Record<string, unknown> | null;
-  pricePaidUsdc: string;
-  x402TxHash: string | null;
-  failedReason: string | null;
-  rating: number | null;
-  expiresAt: string;
+  requirements: Record<string, unknown>;
+  deliverables: Record<string, unknown> | null;
+  priceUsdc: string;
+  paymentTxHash: string | null;
+  buybackTxHash: string | null;
+  buyerRating: number | null;
+  buyerFeedback: string | null;
+  acceptedAt: string | null;
+  deliveredAt: string | null;
   completedAt: string | null;
+  expiresAt: string;
   createdAt: string;
-  service?: { slug: string; title: string; category: string };
-  buyer?: { id: string; name: string };
+  offering?: { slug: string; name: string; category: string };
+  buyerAgent?: { id: string; name: string };
+  sellerAgent?: { id: string; name: string };
 }
 
 export interface DiscoverOptions {
   category?: string;
-  minPrice?: number;
   maxPrice?: number;
-  sortBy?: 'price_asc' | 'price_desc' | 'newest' | 'rating';
-  q?: string;
+  capability?: string;
+  sort?: 'price_asc' | 'price_desc' | 'newest' | 'rating' | 'jobs_completed';
   page?: number;
   limit?: number;
 }
@@ -77,23 +94,27 @@ interface PaginatedApiResponse<T> {
 
 export class ServiceClient {
   private readonly baseUrl: string;
+  private readonly agentId: string;
+  private readonly walletAddress: string;
   private readonly logger: pino.Logger;
 
-  constructor(baseUrl?: string) {
-    this.baseUrl = baseUrl ?? process.env.CEOS_API_URL ?? 'http://localhost:3000';
-    this.logger = rootLogger.child({ module: 'ServiceClient' });
+  constructor(baseUrl: string, agentId: string, walletAddress: string) {
+    this.baseUrl = baseUrl;
+    this.agentId = agentId;
+    this.walletAddress = walletAddress;
+    this.logger = rootLogger.child({ module: 'ServiceClient', agentId });
   }
 
   /**
    * Discover available service offerings with optional filters.
+   * Uses the V2 capability-based search (replaces free-text `q`).
    */
   async discover(options: DiscoverOptions = {}): Promise<ServiceOffering[]> {
     const params = new URLSearchParams();
     if (options.category) params.set('category', options.category);
-    if (options.minPrice !== undefined) params.set('minPrice', options.minPrice.toString());
     if (options.maxPrice !== undefined) params.set('maxPrice', options.maxPrice.toString());
-    if (options.sortBy) params.set('sortBy', options.sortBy);
-    if (options.q) params.set('q', options.q);
+    if (options.capability) params.set('capability', options.capability);
+    if (options.sort) params.set('sort', options.sort);
     if (options.page) params.set('page', options.page.toString());
     if (options.limit) params.set('limit', options.limit.toString());
 
@@ -105,7 +126,7 @@ export class ServiceClient {
     }
 
     this.logger.debug(
-      { count: res.data.length, category: options.category },
+      { count: res.data.length, category: options.category, capability: options.capability },
       'Services discovered',
     );
 
@@ -127,36 +148,29 @@ export class ServiceClient {
   }
 
   /**
-   * Purchase a service offering on behalf of an agent.
+   * Create a service job (purchase an offering) on behalf of this agent.
    *
-   * Creates a ServiceJob in CREATED status.
-   * The provider must ACCEPT and eventually COMPLETE the job.
-   *
-   * @param serviceId - The service offering ID to purchase
-   * @param buyerAgentId - The agent making the purchase
-   * @param walletAddress - The buyer agent's wallet address (for auth header)
-   * @param inputPayload - Optional input data for the service
+   * V2: Uses offeringSlug (not serviceId), client-side ttlMinutes,
+   * and required `requirements` payload.
    */
-  async purchase(
-    serviceId: string,
-    buyerAgentId: string,
-    walletAddress: string,
-    inputPayload?: Record<string, unknown>,
-  ): Promise<ServiceJob> {
+  async createJob(params: {
+    offeringSlug: string;
+    requirements: Record<string, unknown>;
+    ttlMinutes?: number;
+  }): Promise<ServiceJob> {
     const url = `${this.baseUrl}/api/services/jobs`;
 
     const res = await this.fetchJson<ApiResponse<ServiceJob>>(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-wallet-address': walletAddress,
-        // In production, x-wallet-signature and x-wallet-message would also be set.
-        // For agent-runtime internal calls in demo mode, wallet address header suffices.
+        'x-wallet-address': this.walletAddress,
       },
       body: JSON.stringify({
-        serviceId,
-        buyerAgentId,
-        inputPayload,
+        buyerAgentId: this.agentId,
+        offeringSlug: params.offeringSlug,
+        requirements: params.requirements,
+        ttlMinutes: params.ttlMinutes,
       }),
     });
 
@@ -167,11 +181,10 @@ export class ServiceClient {
     this.logger.info(
       {
         jobId: res.data.id,
-        serviceId,
-        buyerAgentId,
-        pricePaidUsdc: res.data.pricePaidUsdc,
+        offeringSlug: params.offeringSlug,
+        priceUsdc: res.data.priceUsdc,
       },
-      'Service purchased',
+      'Service job created',
     );
 
     // TODO: RLAIF — log purchase decision with input context for training data
@@ -180,16 +193,32 @@ export class ServiceClient {
   }
 
   /**
+   * Get a single service job by ID.
+   */
+  async getJob(jobId: string): Promise<ServiceJob> {
+    const url = `${this.baseUrl}/api/services/jobs/${jobId}`;
+    const res = await this.fetchJson<ApiResponse<ServiceJob>>(url, {
+      headers: {
+        'x-wallet-address': this.walletAddress,
+      },
+    });
+
+    if (!res.success) {
+      throw new Error(`Failed to fetch job: ${res.error?.message ?? 'Unknown error'}`);
+    }
+
+    return res.data;
+  }
+
+  /**
    * Poll a service job's status until it reaches a terminal state.
    *
    * @param jobId - The service job ID to poll
-   * @param walletAddress - Caller's wallet address for auth
    * @param intervalMs - Polling interval (default: 5000ms)
    * @param timeoutMs - Max wait time (default: 60000ms)
    */
   async waitForCompletion(
     jobId: string,
-    walletAddress: string,
     intervalMs = 5000,
     timeoutMs = 60000,
   ): Promise<ServiceJob> {
@@ -197,7 +226,7 @@ export class ServiceClient {
     const deadline = Date.now() + timeoutMs;
 
     while (Date.now() < deadline) {
-      const job = await this.getJob(jobId, walletAddress);
+      const job = await this.getJob(jobId);
 
       if (terminalStatuses.has(job.status)) {
         this.logger.info(
@@ -214,40 +243,23 @@ export class ServiceClient {
   }
 
   /**
-   * Get a single service job by ID.
-   */
-  async getJob(jobId: string, walletAddress: string): Promise<ServiceJob> {
-    const url = `${this.baseUrl}/api/services/jobs/${jobId}`;
-    const res = await this.fetchJson<ApiResponse<ServiceJob>>(url, {
-      headers: {
-        'x-wallet-address': walletAddress,
-      },
-    });
-
-    if (!res.success) {
-      throw new Error(`Failed to fetch job: ${res.error?.message ?? 'Unknown error'}`);
-    }
-
-    return res.data;
-  }
-
-  /**
    * Rate a completed service job.
+   *
+   * V2: Uses `feedback` (not `comment`).
    */
   async rateJob(
     jobId: string,
-    walletAddress: string,
     rating: number,
-    comment?: string,
+    feedback?: string,
   ): Promise<ServiceJob> {
     const url = `${this.baseUrl}/api/services/jobs/${jobId}/rate`;
     const res = await this.fetchJson<ApiResponse<ServiceJob>>(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-wallet-address': walletAddress,
+        'x-wallet-address': this.walletAddress,
       },
-      body: JSON.stringify({ rating, comment }),
+      body: JSON.stringify({ rating, feedback }),
     });
 
     if (!res.success) {

@@ -12,32 +12,30 @@ type RouteContext = { params: Promise<{ jobId: string }> };
 /**
  * POST /api/services/jobs/[jobId]/rate
  *
- * Rate a completed service job. Only the BUYER's creator can rate.
- * The job must be in COMPLETED status and not yet rated.
+ * Rate a completed service job. Only the buyer's creator can rate.
+ * Recalculates the offering's avgRating via $transaction.
  */
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const address = await verifyWalletSignature(request);
     authenticatedLimiter.check(address);
-
     const { jobId } = await context.params;
+
     const body: unknown = await request.json();
     const data = rateServiceJobSchema.parse(body);
 
     const job = await prisma.serviceJob.findUnique({
       where: { id: jobId },
       include: {
-        buyer: { select: { creatorAddress: true } },
+        buyerAgent: { select: { creatorAddress: true } },
       },
     });
 
-    if (!job) {
-      throw Errors.notFound("ServiceJob");
-    }
+    if (!job) throw Errors.notFound("Service job");
 
-    // Only the buyer's creator can rate
-    if (job.buyer.creatorAddress !== address) {
-      throw Errors.forbidden("Only the buyer can rate a service job");
+    // Only buyer creator can rate
+    if (job.buyerAgent.creatorAddress !== address) {
+      throw Errors.forbidden("Only the buyer agent's creator can rate");
     }
 
     // Must be completed
@@ -46,38 +44,49 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     // Cannot re-rate
-    if (job.rating !== null) {
+    if (job.buyerRating !== null) {
       throw Errors.conflict("Job has already been rated");
     }
 
-    const rated = await prisma.serviceJob.update({
-      where: { id: jobId },
-      data: {
-        rating: data.rating,
-        ratingComment: data.comment ?? null,
-      },
-      include: {
-        service: {
-          select: { slug: true, title: true, providerId: true },
+    // Atomic: update job rating + recalculate offering avgRating
+    const [updatedJob] = await prisma.$transaction(async (tx) => {
+      const rated = await tx.serviceJob.update({
+        where: { id: jobId },
+        data: {
+          buyerRating: data.rating,
+          buyerFeedback: data.feedback ?? null,
         },
-      },
+        include: {
+          offering: {
+            select: { id: true, slug: true, name: true, category: true },
+          },
+        },
+      });
+
+      // Recalculate offering avgRating from all rated jobs
+      const ratingAgg = await tx.serviceJob.aggregate({
+        where: { offeringId: rated.offeringId, buyerRating: { not: null } },
+        _avg: { buyerRating: true },
+      });
+
+      await tx.serviceOffering.update({
+        where: { id: rated.offeringId },
+        data: { avgRating: ratingAgg._avg.buyerRating },
+      });
+
+      return [rated];
     });
 
     logger.info(
-      {
-        jobId,
-        rating: data.rating,
-        serviceSlug: rated.service.slug,
-        providerId: rated.service.providerId,
-      },
-      "Service job rated",
+      { jobId, rating: data.rating, offeringId: updatedJob.offeringId },
+      "Service job rated — avgRating recalculated",
     );
 
-    // TODO: RLAIF — log rating event for AgentScore computation
+    // TODO: RLAIF — log rating event for training data
 
     return successResponse({
-      ...rated,
-      pricePaidUsdc: rated.pricePaidUsdc.toString(),
+      ...updatedJob,
+      priceUsdc: updatedJob.priceUsdc.toString(),
     });
   } catch (err) {
     return errorResponse(err);
