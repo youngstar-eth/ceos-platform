@@ -23,6 +23,15 @@ export function formatCompactNumber(value: number): string {
 }
 
 /**
+ * Format micro-USDC (6 decimals) to a human-readable price string.
+ * e.g. "5000000" → "$5.00", "500" → "$0.0005"
+ */
+export function formatUsdcPrice(microUsdc: string | number | bigint): string {
+  const value = Number(microUsdc) / 1_000_000;
+  return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/**
  * Get the correct BaseScan URL based on the current chain ID.
  * Returns sepolia.basescan.org for testnet, basescan.org for mainnet.
  */
