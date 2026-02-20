@@ -193,7 +193,7 @@ export const createServiceJobSchema = z.object({
 });
 
 export const updateServiceJobSchema = z.object({
-  status: z.enum(["ACCEPTED", "DELIVERING", "COMPLETED", "REJECTED"]),
+  status: z.enum(["ACCEPTED", "DELIVERING", "COMPLETED", "REJECTED", "DISPUTED"]),
   deliverables: z.record(z.unknown()).optional(),
 });
 

@@ -325,16 +325,37 @@ async function bootstrap(): Promise<RuntimeContext> {
   const ceosApiUrl = process.env.CEOS_API_URL ?? 'http://localhost:3000';
 
   // Load wallet addresses and personas from the database for the executor.
-  // Only agents that are currently running in THIS runtime instance and
-  // have a wallet address are eligible for autonomous job execution.
+  //
+  // In PRODUCTION: Only agents that are currently running in THIS runtime
+  // instance and have a wallet address are eligible for autonomous job
+  // execution. This ensures sovereignty — the agent process that accepted
+  // the job is the one that fulfills it.
+  //
+  // In DEMO_MODE: All ACTIVE agents with a wallet address are eligible,
+  // regardless of whether they're "running" in the posting engine. The
+  // posting engine requires a Farcaster signer (signerUuid) for social
+  // posting, but the service executor only needs a wallet + persona to
+  // fulfill computational jobs. Without this bypass, demo agents with
+  // signerUuid: null are invisible to the executor and jobs stay ACCEPTED.
   const getLocalAgentsWithWallets = async (): Promise<AgentExecutionContext[]> => {
-    const runningIds = engine.getRunningAgentIds();
-    if (runningIds.length === 0) return [];
+    let agents;
 
-    const agents = await prisma.agent.findMany({
-      where: { id: { in: runningIds } },
-      select: { id: true, walletAddress: true, persona: true },
-    });
+    if (DEMO_MODE) {
+      // GOD MODE: Treat ALL active agents as "local" for execution
+      agents = await prisma.agent.findMany({
+        where: { status: 'ACTIVE', walletAddress: { not: null } },
+        select: { id: true, walletAddress: true, persona: true },
+      });
+    } else {
+      // Production: Only agents running in this runtime instance
+      const runningIds = engine.getRunningAgentIds();
+      if (runningIds.length === 0) return [];
+
+      agents = await prisma.agent.findMany({
+        where: { id: { in: runningIds } },
+        select: { id: true, walletAddress: true, persona: true },
+      });
+    }
 
     return agents
       .filter((a) => a.walletAddress)

@@ -31,6 +31,7 @@ import type { Redis } from 'ioredis';
 import pino from 'pino';
 import { logger as rootLogger } from '../src/config.js';
 import { SkillExecutor, type SkillContext } from '../src/core/skill-executor.js';
+import { anchorJobCompletion } from '../src/services/reputation-anchor.js';
 
 const QUEUE_NAME = 'service-job-executor';
 const CONCURRENCY = 3; // Execute up to 3 jobs in parallel
@@ -348,8 +349,29 @@ async function executeServiceJob(
         'Service job executed and completed — buyback & burn triggered',
       );
 
-      // TODO: RLAIF — log execution success for training data
-      //   (capability, skill used, execution time, deliverables quality)
+      // ── Glass Box: RLAIF telemetry for successful execution ──────────
+      await recordDecisionLog(prisma, {
+        jobId,
+        agentId: agentCtx.agentId,
+        prompt: skillContext.parameters as Prisma.InputJsonValue,
+        response: (result.output ?? {}) as Prisma.InputJsonValue,
+        modelUsed: skillId,
+        tokensUsed: 0,
+        executionTimeMs,
+        isSuccess: true,
+        errorMessage: null,
+      }, logger);
+
+      // ── Hash & Anchor: reputation update + provenance hash ──────────
+      await anchorJobCompletion(
+        prisma,
+        jobId,
+        agentCtx.agentId,
+        true, // isSuccess
+        executionTimeMs,
+        job.offering.maxLatencyMs,
+        logger,
+      );
 
       return true;
     }
@@ -423,13 +445,95 @@ async function executeServiceJob(
     'Service job execution failed — transitioned to DISPUTED',
   );
 
-  // TODO: RLAIF — log execution failure for training data
-  //   (capability, skill used, error type, execution time)
+  // ── Glass Box: RLAIF telemetry for failed execution ────────────
+  const errorMsg = typeof result.output === 'object' && result.output !== null
+    ? (result.output as Record<string, unknown>).error as string | undefined
+    : String(result.output);
+
+  await recordDecisionLog(prisma, {
+    jobId,
+    agentId: agentCtx.agentId,
+    prompt: skillContext.parameters as Prisma.InputJsonValue,
+    response: (result.output ?? {}) as Prisma.InputJsonValue,
+    modelUsed: skillId,
+    tokensUsed: 0,
+    executionTimeMs,
+    isSuccess: false,
+    errorMessage: errorMsg ?? 'Skill execution failed or timed out',
+  }, logger);
+
+  // ── Hash & Anchor: reputation penalty + provenance hash ────────
+  await anchorJobCompletion(
+    prisma,
+    jobId,
+    agentCtx.agentId,
+    false, // isSuccess
+    executionTimeMs,
+    job.offering.maxLatencyMs,
+    logger,
+  );
 
   return false;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Record a Glass Box decision log entry for RLAIF telemetry.
+ *
+ * This captures the full "thought process" of an agent: what it was asked
+ * (prompt), what it produced (response), and how it performed. This data is
+ * our institutional moat — cryptographically pure agent behavioral data
+ * that institutions pay premium prices for.
+ *
+ * Wrapped in try/catch so telemetry failures never crash the worker.
+ */
+async function recordDecisionLog(
+  prisma: PrismaClient,
+  log: {
+    jobId: string;
+    agentId: string;
+    prompt: Prisma.InputJsonValue;
+    response: Prisma.InputJsonValue;
+    modelUsed: string;
+    tokensUsed: number;
+    executionTimeMs: number;
+    isSuccess: boolean;
+    errorMessage: string | null;
+  },
+  logger: pino.Logger,
+): Promise<void> {
+  try {
+    await prisma.agentDecisionLog.create({
+      data: {
+        jobId: log.jobId,
+        agentId: log.agentId,
+        prompt: log.prompt,
+        response: log.response,
+        modelUsed: log.modelUsed,
+        tokensUsed: log.tokensUsed,
+        executionTimeMs: log.executionTimeMs,
+        isSuccess: log.isSuccess,
+        errorMessage: log.errorMessage,
+      },
+    });
+
+    logger.debug(
+      { jobId: log.jobId, agentId: log.agentId, isSuccess: log.isSuccess },
+      'Glass Box: decision log recorded',
+    );
+  } catch (err) {
+    // Telemetry must never crash the worker — log and continue
+    logger.error(
+      {
+        jobId: log.jobId,
+        agentId: log.agentId,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      'Glass Box: failed to record decision log — telemetry lost for this execution',
+    );
+  }
+}
 
 /**
  * Resolve a capability string to the best matching registered skill ID.

@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "dev": "turbo run dev",
+    "dev:all": "concurrently -n web,runtime -c cyan,magenta \"npm run dev -w @ceosrun/web\" \"npm run dev -w @ceosrun/agent-runtime\"",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.0.18",
+    "concurrently": "^9.2.1",
     "eslint": "^9.0.0",
     "husky": "^9.0.0",
     "lint-staged": "^15.0.0",

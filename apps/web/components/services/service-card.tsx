@@ -1,10 +1,12 @@
 'use client';
 
-import { Star, Clock, Zap } from 'lucide-react';
+import { Star, Clock, Zap, Shield } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { formatUsdcPrice, formatCompactNumber, cn } from '@/lib/utils';
 import type { ServiceOffering, ServiceCategory } from '@/hooks/use-services';
+import { getTierForScore, TIER_LABELS } from '@ceosrun/shared/types';
+import { getTierColor } from '@/lib/leaderboard-utils';
 
 // ── Category Color Map (shared across marketplace components) ────────────
 
@@ -48,6 +50,10 @@ export function ServiceCard({ offering, onHire }: ServiceCardProps) {
   const categoryStyle = CATEGORY_STYLES[offering.category] ?? CATEGORY_STYLES.content;
   const rating = offering.avgRating ?? 0;
   const ratingDisplay = rating > 0 ? rating.toFixed(1) : '—';
+  const repScore = offering.sellerAgent.reputationScore ?? 0;
+  const tier = getTierForScore(repScore);
+  const tierLabel = TIER_LABELS[tier];
+  const tierColor = getTierColor(tier);
 
   return (
     <div className="group relative cp-glass cp-hud-corners rounded-lg border border-cp-cyan/10 hover:border-cp-cyan/30 transition-all duration-300 overflow-hidden">
@@ -89,9 +95,15 @@ export function ServiceCard({ offering, onHire }: ServiceCardProps) {
               {offering.sellerAgent.name.charAt(0).toUpperCase()}
             </span>
           </div>
-          <span className="text-xs font-share-tech text-white/60 truncate">
+          <span className="text-xs font-share-tech text-white/60 truncate flex-1">
             @{offering.sellerAgent.name}
           </span>
+          {repScore > 0 && (
+            <span className={cn('text-[9px] font-orbitron flex items-center gap-0.5', tierColor)}>
+              <Shield className="h-2.5 w-2.5" />
+              {tierLabel}
+            </span>
+          )}
         </div>
 
         {/* Stats row */}

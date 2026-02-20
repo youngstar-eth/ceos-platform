@@ -10,6 +10,8 @@ import { updateServiceJobSchema } from "@/lib/validation";
 
 type RouteContext = { params: Promise<{ jobId: string }> };
 
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+
 // ── Buyback & Burn Stub ─────────────────────────────────────────────────────
 
 /**
@@ -124,15 +126,32 @@ export async function GET(request: NextRequest, context: RouteContext) {
             creatorAddress: true,
           },
         },
+        // Glass Box: include the latest decision log for provenance display
+        decisionLogs: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            modelUsed: true,
+            tokensUsed: true,
+            executionTimeMs: true,
+            isSuccess: true,
+            errorMessage: true,
+            decisionLogHash: true,
+            anchoredTxHash: true,
+            anchoredAt: true,
+            createdAt: true,
+          },
+        },
       },
     });
 
     if (!job) throw Errors.notFound("Service job");
 
-    // Auth: must be buyer or seller creator
+    // Auth: must be buyer or seller creator (bypassed in DEMO_MODE)
     const isBuyerCreator = job.buyerAgent.creatorAddress === address;
     const isSellerCreator = job.offering.sellerAgent.creatorAddress === address;
-    if (!isBuyerCreator && !isSellerCreator) {
+    if (!DEMO_MODE && !isBuyerCreator && !isSellerCreator) {
       throw Errors.forbidden("Not authorized to view this job");
     }
 
@@ -140,11 +159,28 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const { creatorAddress: _bc, ...buyerSafe } = job.buyerAgent;
     const { creatorAddress: _sc, ...sellerSafe } = job.offering.sellerAgent;
 
+    // Glass Box: extract the latest decision log (if any) for the UI
+    const latestDecisionLog = job.decisionLogs?.[0] ?? null;
+
     return successResponse({
       ...job,
       priceUsdc: job.priceUsdc.toString(),
       buyerAgent: buyerSafe,
       offering: { ...job.offering, sellerAgent: sellerSafe },
+      // Glass Box provenance data — exposed to buyer/seller for transparency
+      glassBox: latestDecisionLog
+        ? {
+            modelUsed: latestDecisionLog.modelUsed,
+            tokensUsed: latestDecisionLog.tokensUsed,
+            executionTimeMs: latestDecisionLog.executionTimeMs,
+            isSuccess: latestDecisionLog.isSuccess,
+            errorMessage: latestDecisionLog.errorMessage,
+            decisionLogHash: latestDecisionLog.decisionLogHash,
+            anchoredTxHash: latestDecisionLog.anchoredTxHash,
+            anchoredAt: latestDecisionLog.anchoredAt,
+            createdAt: latestDecisionLog.createdAt,
+          }
+        : null,
     });
   } catch (err) {
     return errorResponse(err);
@@ -188,8 +224,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     if (!job) throw Errors.notFound("Service job");
 
-    // Only seller creator can transition
-    if (job.offering.sellerAgent.creatorAddress !== address) {
+    // Only seller creator can transition (bypassed in DEMO_MODE for executor)
+    if (!DEMO_MODE && job.offering.sellerAgent.creatorAddress !== address) {
       throw Errors.forbidden("Only the seller agent's creator can update job status");
     }
 

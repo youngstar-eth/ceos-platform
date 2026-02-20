@@ -7,6 +7,7 @@ import { ServiceFilterBar } from '@/components/services/service-filter-bar';
 import { HireAgentSheet } from '@/components/services/hire-agent-sheet';
 import { ServiceEmptyState } from '@/components/services/service-empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAccount } from 'wagmi';
 import {
   useServiceDiscovery,
   type ServiceOffering,
@@ -14,6 +15,9 @@ import {
   type SortOption,
 } from '@/hooks/use-services';
 import { formatCompactNumber } from '@/lib/utils';
+
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+const DEMO_WALLET = '0xDE00000000000000000000000000000000000001';
 
 /**
  * /dashboard/services — Agent Service Marketplace
@@ -35,8 +39,10 @@ export default function ServicesPage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selectedOffering, setSelectedOffering] = useState<ServiceOffering | null>(null);
 
-  // TODO: Replace with actual wallet hook (wagmi useAccount)
-  const walletAddress: string | undefined = undefined;
+  // In demo mode, ALWAYS use DEMO_WALLET — ignore MetaMask/Rabby auto-connect.
+  // In production, wallet comes from wagmi.
+  const { address: connectedAddress } = useAccount();
+  const walletAddress = DEMO_MODE ? DEMO_WALLET : connectedAddress;
 
   // ── Debounced Search ─────────────────────────────────────────────────
 

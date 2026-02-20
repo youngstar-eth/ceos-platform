@@ -1510,6 +1510,123 @@ export const FEE_SPLITTER_ABI = [
   },
 ] as const;
 
+// ── ERC-8004 Trust Registry ABI (Sovereign Agent Identity NFT) ──
+
+export const ERC8004_TRUST_REGISTRY_ABI = [
+  {
+    type: 'function',
+    name: 'mintIdentity',
+    inputs: [
+      { name: 'agent', type: 'address', internalType: 'address' },
+      { name: 'agentURI', type: 'string', internalType: 'string' },
+    ],
+    outputs: [{ name: 'tokenId', type: 'uint256', internalType: 'uint256' }],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'getIdentity',
+    inputs: [{ name: 'tokenId', type: 'uint256', internalType: 'uint256' }],
+    outputs: [{
+      name: '',
+      type: 'tuple',
+      internalType: 'struct IERC8004TrustRegistry.AgentIdentity',
+      components: [
+        { name: 'agentAddress', type: 'address', internalType: 'address' },
+        { name: 'agentURI', type: 'string', internalType: 'string' },
+        { name: 'reputationScore', type: 'uint256', internalType: 'uint256' },
+        { name: 'registeredAt', type: 'uint256', internalType: 'uint256' },
+      ],
+    }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'updateReputation',
+    inputs: [
+      { name: 'tokenId', type: 'uint256', internalType: 'uint256' },
+      { name: 'score', type: 'uint256', internalType: 'uint256' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'addValidation',
+    inputs: [
+      { name: 'tokenId', type: 'uint256', internalType: 'uint256' },
+      { name: 'skillId', type: 'string', internalType: 'string' },
+      { name: 'passed', type: 'bool', internalType: 'bool' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'getValidations',
+    inputs: [{ name: 'tokenId', type: 'uint256', internalType: 'uint256' }],
+    outputs: [{
+      name: '',
+      type: 'tuple[]',
+      internalType: 'struct IERC8004TrustRegistry.Validation[]',
+      components: [
+        { name: 'skillId', type: 'string', internalType: 'string' },
+        { name: 'passed', type: 'bool', internalType: 'bool' },
+        { name: 'validatedAt', type: 'uint256', internalType: 'uint256' },
+      ],
+    }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getTokenByAgent',
+    inputs: [{ name: 'agent', type: 'address', internalType: 'address' }],
+    outputs: [{ name: '', type: 'uint256', internalType: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'authorizedMinters',
+    inputs: [{ name: '', type: 'address', internalType: 'address' }],
+    outputs: [{ name: '', type: 'bool', internalType: 'bool' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'event',
+    name: 'IdentityMinted',
+    inputs: [
+      { name: 'agent', type: 'address', indexed: true, internalType: 'address' },
+      { name: 'tokenId', type: 'uint256', indexed: true, internalType: 'uint256' },
+      { name: 'agentURI', type: 'string', indexed: false, internalType: 'string' },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'ReputationUpdated',
+    inputs: [
+      { name: 'tokenId', type: 'uint256', indexed: true, internalType: 'uint256' },
+      { name: 'oldScore', type: 'uint256', indexed: false, internalType: 'uint256' },
+      { name: 'newScore', type: 'uint256', indexed: false, internalType: 'uint256' },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'ValidationAdded',
+    inputs: [
+      { name: 'tokenId', type: 'uint256', indexed: true, internalType: 'uint256' },
+      { name: 'skillId', type: 'string', indexed: false, internalType: 'string' },
+      { name: 'passed', type: 'bool', indexed: false, internalType: 'bool' },
+    ],
+    anonymous: false,
+  },
+  { type: 'error', name: 'UnauthorizedMinter', inputs: [] },
+  { type: 'error', name: 'IdentityAlreadyExists', inputs: [] },
+  { type: 'error', name: 'IdentityNotFound', inputs: [] },
+  { type: 'error', name: 'InvalidTokenId', inputs: [] },
+] as const;
+
 // ── ERC20 minimal ABI (for approve/allowance on staking tokens) ──
 
 export const ERC20_ABI = [
@@ -1597,6 +1714,13 @@ export function getFeeSplitterContract() {
   return {
     address: CONTRACT_ADDRESSES.feeSplitter,
     abi: FEE_SPLITTER_ABI,
+  } as const;
+}
+
+export function getErc8004RegistryContract() {
+  return {
+    address: CONTRACT_ADDRESSES.erc8004Registry,
+    abi: ERC8004_TRUST_REGISTRY_ABI,
   } as const;
 }
 

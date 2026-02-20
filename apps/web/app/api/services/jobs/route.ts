@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { Prisma } from "@prisma/client";
+import { Prisma, ServiceJobStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { successResponse, errorResponse } from "@/lib/api-utils";
@@ -8,6 +8,8 @@ import { verifyWalletSignature } from "@/lib/auth";
 import { authenticatedLimiter } from "@/lib/rate-limit";
 import { createServiceJobSchema } from "@/lib/validation";
 import { parseX402Header, verifyServicePayment } from "@/lib/x402-service";
+
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 /**
  * POST /api/services/jobs
@@ -46,7 +48,9 @@ export async function POST(request: NextRequest) {
     });
 
     if (!buyerAgent) throw Errors.notFound("Buyer agent");
-    if (buyerAgent.creatorAddress !== address) {
+
+    // GOD MODE: In demo mode, skip ownership check — any wallet can use demo agents.
+    if (!DEMO_MODE && buyerAgent.creatorAddress !== address) {
       throw Errors.forbidden("Only the agent creator can purchase services");
     }
     if (buyerAgent.status !== "ACTIVE") {
@@ -98,15 +102,24 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Create job + increment totalJobs atomically
+    //
+    // In DEMO_MODE, auto-accept the job so the BullMQ Service Executor
+    // picks it up immediately. In production, jobs start as CREATED and
+    // require explicit seller acceptance via PATCH.
+    const initialStatus: ServiceJobStatus = DEMO_MODE ? "ACCEPTED" : "CREATED";
+    const acceptedAt = DEMO_MODE ? new Date() : undefined;
+
     const [job] = await prisma.$transaction([
       prisma.serviceJob.create({
         data: {
           offeringId: offering.id,
           buyerAgentId: data.buyerAgentId,
           sellerAgentId: offering.sellerAgentId,
+          status: initialStatus,
           requirements: data.requirements as Prisma.InputJsonValue,
           priceUsdc: offering.priceUsdc,
           paymentTxHash,
+          acceptedAt,
           expiresAt,
         },
         include: {
@@ -131,11 +144,13 @@ export async function POST(request: NextRequest) {
         buyerAgentId: data.buyerAgentId,
         priceUsdc: offering.priceUsdc.toString(),
         paymentTxHash,
+        status: initialStatus,
+        demoMode: DEMO_MODE,
       },
-      "Service job created",
+      DEMO_MODE
+        ? "Service job created with ACCEPTED status (demo mode — auto-accepted for BullMQ)"
+        : "Service job created",
     );
-
-    // TODO: RLAIF — log service purchase decision for training data
 
     return successResponse(
       { ...job, priceUsdc: job.priceUsdc.toString() },
