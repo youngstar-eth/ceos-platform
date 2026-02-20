@@ -24,6 +24,7 @@ import {
   scheduleServiceExecutor,
   type AgentExecutionContext,
 } from '../workers/service-executor.js';
+import { createSocialHunterWorker, scheduleSocialHunter } from '../workers/social-hunter-worker.js';
 import { getStrategy } from './strategies/posting.js';
 
 const METRICS_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -393,6 +394,11 @@ async function bootstrap(): Promise<RuntimeContext> {
   await scheduleServiceExecutor(serviceExecutor.queue);
   logger.info('Service job executor initialized (poll: 15s)');
 
+  // 5e. Initialize Social Hunter worker (autonomous lead gen on Farcaster)
+  const socialHunter = createSocialHunterWorker(redis, neynar, openrouter);
+  await scheduleSocialHunter(socialHunter.queue, prisma);
+  logger.info('Social Hunter worker initialized (poll: 5m)');
+
   // Refresh agent contexts alongside the agent poll
   const executorRefreshTimer = setInterval(() => {
     if (!isShuttingDown) {
@@ -463,6 +469,7 @@ async function bootstrap(): Promise<RuntimeContext> {
       if (feeDistributorWorker) workerClosePromises.push(feeDistributorWorker.close());
       workerClosePromises.push(serviceJobMaintenance.shutdown());
       workerClosePromises.push(serviceExecutor.shutdown());
+      workerClosePromises.push(socialHunter.shutdown());
       await Promise.allSettled(workerClosePromises);
       logger.info('Workers shutdown complete');
 
@@ -535,7 +542,7 @@ async function bootstrap(): Promise<RuntimeContext> {
   runtimeContext = context;
 
   const runningAgents = engine.getRunningAgentIds();
-  const activeWorkers = ['content', 'metrics', 'posting', 'scheduler', 'service-maintenance', 'service-executor'];
+  const activeWorkers = ['content', 'metrics', 'posting', 'scheduler', 'service-maintenance', 'service-executor', 'social-hunter'];
   if (scoutWorker) activeWorkers.push('scout', 'treasury', 'fee-distributor');
   logger.info({
     workers: activeWorkers,

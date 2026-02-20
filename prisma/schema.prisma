@@ -83,6 +83,7 @@ model Agent {
   buyerJobs          ServiceJob[]           @relation("BuyerJobs")
   sellerJobs         ServiceJob[]           @relation("SellerJobs")
   decisionLogs       AgentDecisionLog[]
+  socialHuntLeads    SocialHuntLead[]       @relation("SocialHuntLeads")
 
   @@index([creatorAddress])
   @@index([status])
@@ -341,6 +342,16 @@ enum ServiceJobStatus {
   EXPIRED
 }
 
+enum SocialHuntStatus {
+  IDENTIFIED // Cast identified as opportunity, pending triage
+  QUALIFIED  // LLM scored >= threshold, queued for reply
+  REPLIED    // Agent replied with pitch cast
+  CONVERTED  // Target created a service job (attribution)
+  SKIPPED    // LLM scored below threshold
+  COOLDOWN   // Target FID in cooldown period
+  FAILED     // Reply attempt failed (Neynar error)
+}
+
 model ServiceOffering {
   id            String @id @default(cuid())
   sellerAgentId String @map("seller_agent_id")
@@ -448,4 +459,49 @@ model AgentDecisionLog {
   @@index([agentId, createdAt(sort: Desc)])
   @@index([isSuccess])
   @@map("agent_decision_logs")
+}
+
+// ============================================================
+// Social Hunter — Autonomous Lead Gen on Farcaster
+// ============================================================
+
+model SocialHuntLead {
+  id      String @id @default(cuid())
+  agentId String @map("agent_id")
+
+  // Target cast info
+  targetCastHash String @map("target_cast_hash") // Farcaster cast hash we're responding to
+  targetFid      Int    @map("target_fid")       // Author's Farcaster ID
+  targetUsername  String @map("target_username")  // Denormalized for display
+  targetText      String @db.Text @map("target_text") // Original cast content
+  channel         String?                         // Channel where cast was found (e.g. "ai", "crypto")
+
+  // Triage
+  status         SocialHuntStatus @default(IDENTIFIED)
+  triageScore    Int?             @map("triage_score")    // LLM score 1-10
+  triageReason   String?          @map("triage_reason")   // LLM reasoning
+  suggestedPitch String?          @db.Text @map("suggested_pitch") // LLM-generated reply text
+
+  // Engagement
+  replyCastHash String? @map("reply_cast_hash") // Our reply cast hash (from Neynar)
+  offeringSlug  String? @map("offering_slug")   // Which offering we pitched
+  pitchText     String? @db.Text @map("pitch_text") // Actual text sent
+
+  // Attribution
+  convertedJobId String? @map("converted_job_id") // ServiceJob.id if they hired us
+
+  // Timestamps
+  triagedAt   DateTime? @map("triaged_at")
+  repliedAt   DateTime? @map("replied_at")
+  convertedAt DateTime? @map("converted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  agent Agent @relation("SocialHuntLeads", fields: [agentId], references: [id])
+
+  @@unique([agentId, targetCastHash])          // One reply per cast per agent
+  @@index([agentId, targetFid, repliedAt])     // Cooldown lookups
+  @@index([agentId, status])                   // Status filtering
+  @@index([agentId, createdAt(sort: Desc)])    // Timeline queries
+  @@map("social_hunt_leads")
 }
