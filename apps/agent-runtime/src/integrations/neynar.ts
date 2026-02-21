@@ -40,6 +40,38 @@ interface NeynarCastResponse {
   };
 }
 
+/**
+ * Raw Neynar API cast shape returned by channel feeds and search endpoints.
+ * Richer than our internal `Cast` type — includes author details, engagement
+ * metrics, and channel context needed for Social Hunter triage.
+ */
+interface NeynarChannelCast {
+  hash: string;
+  author: {
+    fid: number;
+    username: string;
+    display_name: string;
+    follower_count: number;
+    following_count: number;
+    power_badge: boolean;
+  };
+  text: string;
+  timestamp: string;
+  channel?: { id: string; name: string };
+  reactions: { likes_count: number; recasts_count: number };
+  replies: { count: number };
+  parent_hash?: string;
+}
+
+interface NeynarChannelFeedResponse {
+  casts: NeynarChannelCast[];
+  next?: { cursor: string };
+}
+
+interface NeynarCastSearchResponse {
+  result: { casts: NeynarChannelCast[] };
+}
+
 interface NeynarNotificationsResponse {
   notifications: Array<{
     type: string;
@@ -405,6 +437,77 @@ export class NeynarClient {
     return this.publishCast(signerUuid, text, { replyTo: parentHash });
   }
 
+  // ── Social Hunter: Channel Feed + Search ────────────────────────────────
+
+  /**
+   * Fetch recent casts from a Farcaster channel.
+   * Used by Social Hunter's "Ear" to scan for potential leads.
+   *
+   * @param channelId - Channel identifier (e.g. "ai", "trading")
+   * @param limit - Number of casts to return (max 25)
+   * @param cursor - Pagination cursor from previous response
+   */
+  async getChannelFeed(
+    channelId: string,
+    limit = 25,
+    cursor?: string,
+  ): Promise<{ casts: NeynarChannelCast[]; next?: { cursor: string } }> {
+    const params = new URLSearchParams({
+      channel_ids: channelId,
+      limit: String(Math.min(limit, 25)),
+      with_recasts: 'false',
+    });
+    if (cursor) params.set('cursor', cursor);
+
+    this.logger.debug({ channelId, limit }, 'Fetching channel feed');
+
+    const response = await this.fetchWithRetry<NeynarChannelFeedResponse>(
+      `${NEYNAR_API_BASE}/feed/channels?${params.toString()}`,
+      { method: 'GET' },
+    );
+
+    this.logger.debug(
+      { channelId, castCount: response.casts.length },
+      'Channel feed fetched',
+    );
+
+    return {
+      casts: response.casts,
+      next: response.next,
+    };
+  }
+
+  /**
+   * Search Farcaster casts by keyword.
+   * Used by Social Hunter's "Ear" to find buying-intent signals.
+   *
+   * @param query - Search query string
+   * @param limit - Number of results (max 25)
+   */
+  async searchCasts(
+    query: string,
+    limit = 10,
+  ): Promise<{ casts: NeynarChannelCast[] }> {
+    const params = new URLSearchParams({
+      q: query,
+      limit: String(Math.min(limit, 25)),
+    });
+
+    this.logger.debug({ query, limit }, 'Searching casts');
+
+    const response = await this.fetchWithRetry<NeynarCastSearchResponse>(
+      `${NEYNAR_API_BASE}/cast/search?${params.toString()}`,
+      { method: 'GET' },
+    );
+
+    this.logger.debug(
+      { query, resultCount: response.result.casts.length },
+      'Cast search complete',
+    );
+
+    return { casts: response.result.casts };
+  }
+
   startMentionPolling(
     fid: number,
     callback: (mentions: Mention[]) => void | Promise<void>,
@@ -546,4 +649,4 @@ export class NeynarClient {
   }
 }
 
-export type { Cast, CastOptions, Mention, SignerInfo, NeynarUser };
+export type { Cast, CastOptions, Mention, SignerInfo, NeynarUser, NeynarChannelCast };

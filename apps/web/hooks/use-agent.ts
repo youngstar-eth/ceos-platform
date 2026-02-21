@@ -2,14 +2,11 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-export interface WalletPolicy {
-  spendLimit?: {
-    amount: string;
-    currency: 'ETH' | 'USDC';
-    period: 'daily' | 'weekly' | 'monthly';
-  };
-  whitelist?: string[];
-  approvalRequiredFor?: string[];
+/** ERC-8004 on-chain identity (1:1 relation from Agent → ERC8004Identity) */
+export interface AgentIdentity {
+  reputationScore: number;
+  tokenId: number;
+  agentUri?: string;
 }
 
 export interface Agent {
@@ -20,14 +17,11 @@ export interface Agent {
   farcasterFid: number | null;
   farcasterUsername: string | null;
   onChainId: number | null;
-  onChainAddress: string | null;
   personality: string | null;
   pfpUrl: string | null;
   bannerUrl: string | null;
   skills: string[];
   strategy: string | Record<string, unknown>;
-  walletAddress: string | null;
-  walletPolicy: WalletPolicy | null;
   metrics: {
     totalCasts: number;
     totalLikes: number;
@@ -35,6 +29,8 @@ export interface Agent {
     totalFollowers: number;
     engagementRate: number;
   } | null;
+  /** ERC-8004 identity with reputation score (null if agent has no on-chain identity) */
+  identity: AgentIdentity | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -68,31 +64,6 @@ interface UpdateAgentInput {
   personality?: string;
   skills?: string[];
   strategy?: Agent['strategy'];
-}
-
-interface ActivateAgentInput {
-  id: string;
-  farcasterUsername: string;
-  walletPolicy?: WalletPolicy;
-  /** Connected wallet address — sent as x-wallet-address header for auth. */
-  walletAddress?: string;
-}
-
-interface ActivateAgentResponse {
-  success: boolean;
-  data: {
-    agent: Partial<Agent>;
-    farcasterProfile: {
-      fid: number;
-      username: string;
-      displayName: string | null;
-      bio: string | null;
-      pfpUrl: string | null;
-      followerCount: number;
-      followingCount: number;
-    };
-    message: string;
-  };
 }
 
 async function fetchAgents(page = 1, limit = 10, creator?: string): Promise<AgentsResponse> {
@@ -183,40 +154,6 @@ export function useUpdateAgent() {
     mutationFn: updateAgent,
     onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ['agents'] });
-      void queryClient.invalidateQueries({
-        queryKey: ['agent', variables.id],
-      });
-    },
-  });
-}
-
-async function activateAgent(input: ActivateAgentInput): Promise<ActivateAgentResponse> {
-  const { id, walletAddress, ...data } = input;
-  const res = await fetch(`/api/agents/${id}/activate`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(walletAddress ? { 'x-wallet-address': walletAddress } : {}),
-    },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: { message: 'Activation failed' } }));
-    throw new Error(
-      (err as { error?: { message?: string } })?.error?.message ?? 'Failed to activate agent',
-    );
-  }
-  return res.json() as Promise<ActivateAgentResponse>;
-}
-
-export function useActivateAgent() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: activateAgent,
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ['agents'] });
-      void queryClient.invalidateQueries({ queryKey: ['my-agents'] });
       void queryClient.invalidateQueries({
         queryKey: ['agent', variables.id],
       });

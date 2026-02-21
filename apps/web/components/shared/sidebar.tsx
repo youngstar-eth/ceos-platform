@@ -5,12 +5,14 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   Bot,
+  Store,
   Rocket,
   DollarSign,
   Sparkles,
   Trophy,
   User,
   Coins,
+  Target,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -31,6 +33,11 @@ const sidebarLinks = [
     icon: Bot,
   },
   {
+    href: '/dashboard/services',
+    label: 'Services',
+    icon: Store,
+  },
+  {
     href: '/dashboard/deploy',
     label: 'Deploy',
     icon: Rocket,
@@ -49,6 +56,11 @@ const sidebarLinks = [
     href: '/dashboard/leaderboard',
     label: 'Leaderboard',
     icon: Trophy,
+  },
+  {
+    href: '/dashboard/hunt-leads',
+    label: 'Hunt Leads',
+    icon: Target,
   },
   {
     href: '/dashboard/skills',

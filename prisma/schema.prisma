@@ -17,6 +17,14 @@ enum AgentStatus {
   FAILED
 }
 
+// The Holy Trinity — tracks how many identity pillars are linked
+enum TrinityStatus {
+  NONE            // No identities provisioned yet
+  CDP_ONLY        // CDP wallet provisioned, no Farcaster or ERC-8004
+  CDP_FARCASTER   // CDP + Farcaster linked, missing ERC-8004
+  COMPLETE        // All 3 pillars linked: CDP + Farcaster + ERC-8004
+}
+
 enum ContentType {
   ORIGINAL
   THREAD
@@ -37,24 +45,31 @@ model Agent {
   persona        Json
   skills         String[]
   strategy       Json
-  farcasterUsername        String?  @map("farcaster_username")
-  signerUuid              String?  @map("signer_uuid")
-  agentUri                String?  @map("agent_uri")
-  pfpUrl                  String?  @map("pfp_url")
-  bannerUrl               String?  @map("banner_url")
-  createdAt               DateTime @default(now()) @map("created_at")
-  updatedAt               DateTime @updatedAt @map("updated_at")
+  signerUuid     String?     @map("signer_uuid")
+  agentUri       String?     @map("agent_uri")
+  pfpUrl         String?     @map("pfp_url")
+  bannerUrl      String?     @map("banner_url")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
 
-  walletAddress           String?  @unique @map("wallet_address")
-  walletEmail             String?  @unique @map("wallet_email")
-  cdpWalletData           String?  @db.Text @map("cdp_wallet_data")
-  walletPolicy       Json?     @map("wallet_policy")
-  walletSessionLimit Decimal?  @default(50) @db.Decimal(18, 6) @map("wallet_session_limit")
-  walletTxLimit      Decimal?  @default(10) @db.Decimal(18, 6) @map("wallet_tx_limit")
+  walletAddress      String?   @unique @map("wallet_address")
+  walletEmail        String?   @unique @map("wallet_email")
+  walletSessionLimit Decimal?  @default(50) @map("wallet_session_limit") @db.Decimal(18, 6)
+  walletTxLimit      Decimal?  @default(10) @map("wallet_tx_limit") @db.Decimal(18, 6)
   walletAutoFund     Boolean   @default(false) @map("wallet_auto_fund")
+  walletId           String?   @unique @map("wallet_id")
+  cdpWalletData      String?   @map("cdp_wallet_data")
+  walletDataIV       String?   @map("wallet_data_iv")
+  walletAuthTag      String?   @map("wallet_auth_tag")
   lastEngagementRate Float?    @map("last_engagement_rate")
   lastFollowerCount  Int?      @map("last_follower_count")
   lastMetricsAt      DateTime? @map("last_metrics_at")
+
+  // Holy Trinity — Sovereign Identity Pillars
+  trinityStatus   TrinityStatus @default(NONE) @map("trinity_status")
+  erc8004TokenId  Int?          @unique @map("erc8004_token_id")  // On-chain ERC-8004 NFT token ID
+  trinityMintTx   String?       @map("trinity_mint_tx")           // Tx hash of ERC-8004 mint
+  trinityLinkedAt DateTime?     @map("trinity_linked_at")         // When all 3 pillars were linked
 
   casts              Cast[]
   metrics            AgentMetrics[]
@@ -64,6 +79,11 @@ model Agent {
   walletTransactions WalletTransaction[]
   metricsSnapshots   AgentMetricsSnapshot[]
   scoutInvestments   ScoutInvestment[]
+  sellerOfferings    ServiceOffering[]      @relation("SellerOfferings")
+  buyerJobs          ServiceJob[]           @relation("BuyerJobs")
+  sellerJobs         ServiceJob[]           @relation("SellerJobs")
+  decisionLogs       AgentDecisionLog[]
+  socialHuntLeads    SocialHuntLead[]       @relation("SocialHuntLeads")
 
   @@index([creatorAddress])
   @@index([status])
@@ -126,13 +146,13 @@ model CreatorScore {
 }
 
 model RevenueEpoch {
-  id           String   @id @default(cuid())
-  epochNumber  Int      @unique @map("epoch_number")
-  totalRevenue BigInt   @map("total_revenue")
-  creatorShare BigInt   @map("creator_share")
-  finalized    Boolean  @default(false)
+  id           String    @id @default(cuid())
+  epochNumber  Int       @unique @map("epoch_number")
+  totalRevenue BigInt    @map("total_revenue")
+  creatorShare BigInt    @map("creator_share")
+  finalized    Boolean   @default(false)
   finalizedAt  DateTime? @map("finalized_at")
-  createdAt    DateTime @default(now()) @map("created_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
 
   claims RevenueClaim[]
 
@@ -155,18 +175,18 @@ model RevenueClaim {
 }
 
 model X402Payment {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   endpoint   String
   amount     BigInt
   payer      String
   payee      String?
   signature  String?
-  txHash     String?  @map("tx_hash")
-  resourceId String?  @map("resource_id")
-  chainId    Int?     @map("chain_id")
+  txHash     String?   @map("tx_hash")
+  resourceId String?   @map("resource_id")
+  chainId    Int?      @map("chain_id")
   network    String?
   verifiedAt DateTime? @map("verified_at")
-  createdAt  DateTime @default(now()) @map("created_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
 
   @@index([payer])
   @@index([endpoint])
@@ -232,7 +252,7 @@ model TradingMetric {
 model WalletTransaction {
   id         String   @id @default(cuid())
   agentId    String   @map("agent_id")
-  type       String   // "x402_outbound" | "x402_inbound" | "deploy_fee" | "revenue_claim"
+  type       String // "x402_outbound" | "x402_inbound" | "deploy_fee" | "revenue_claim"
   amount     Decimal  @db.Decimal(18, 6)
   currency   String   @default("USDC")
   recipient  String?
@@ -276,8 +296,8 @@ model ScoutInvestment {
   agentId    String   @map("agent_id")
   agentToken String   @map("agent_token")
   inputToken String   @map("input_token")
-  amountIn   Decimal  @db.Decimal(78, 0) @map("amount_in")
-  amountOut  Decimal  @db.Decimal(78, 0) @map("amount_out")
+  amountIn   Decimal  @map("amount_in") @db.Decimal(78, 0)
+  amountOut  Decimal  @map("amount_out") @db.Decimal(78, 0)
   txHash     String?  @unique @map("tx_hash")
   status     String   @default("pending") // pending | confirmed | failed
   createdAt  DateTime @default(now()) @map("created_at")
@@ -291,7 +311,7 @@ model ScoutInvestment {
 
 model FeeDistribution {
   id                String   @id @default(cuid())
-  totalAmount       Decimal  @db.Decimal(78, 0) @map("total_amount")
+  totalAmount       Decimal  @map("total_amount") @db.Decimal(78, 0)
   currency          String   @default("ETH")
   agentTreasuryAddr String   @map("agent_treasury_addr")
   txHash            String?  @unique @map("tx_hash")
@@ -300,4 +320,188 @@ model FeeDistribution {
 
   @@index([status])
   @@map("fee_distributions")
+}
+
+// ============================================================
+// Service Registry — Agent-to-Agent Economy Layer
+// ============================================================
+
+enum ServiceStatus {
+  ACTIVE
+  PAUSED
+  DELISTED
+}
+
+enum ServiceJobStatus {
+  CREATED
+  ACCEPTED
+  DELIVERING
+  COMPLETED
+  REJECTED
+  DISPUTED
+  EXPIRED
+}
+
+enum SocialHuntStatus {
+  IDENTIFIED // Cast identified as opportunity, pending triage
+  QUALIFIED  // LLM scored >= threshold, queued for reply
+  REPLIED    // Agent replied with pitch cast
+  CONVERTED  // Target created a service job (attribution)
+  SKIPPED    // LLM scored below threshold
+  COOLDOWN   // Target FID in cooldown period
+  FAILED     // Reply attempt failed (Neynar error)
+}
+
+model ServiceOffering {
+  id            String @id @default(cuid())
+  sellerAgentId String @map("seller_agent_id")
+
+  name        String
+  slug        String @unique
+  description String @db.Text
+  category    String // content | analysis | trading | engagement | networking
+
+  priceUsdc    BigInt @map("price_usdc") // micro-USDC (6 decimals)
+  pricingModel String @default("per_call") @map("pricing_model")
+
+  inputSchema  Json @map("input_schema")
+  outputSchema Json @map("output_schema")
+
+  maxLatencyMs Int           @default(30000) @map("max_latency_ms")
+  status       ServiceStatus @default(ACTIVE)
+
+  totalJobs     Int    @default(0) @map("total_jobs")
+  completedJobs Int    @default(0) @map("completed_jobs")
+  avgRating     Float? @map("avg_rating")
+  avgLatencyMs  Int?   @map("avg_latency_ms")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  sellerAgent Agent        @relation("SellerOfferings", fields: [sellerAgentId], references: [id])
+  jobs        ServiceJob[]
+
+  @@index([category, status])
+  @@index([sellerAgentId])
+  @@index([priceUsdc])
+  @@map("service_offerings")
+}
+
+model ServiceJob {
+  id            String @id @default(cuid())
+  offeringId    String @map("offering_id")
+  buyerAgentId  String @map("buyer_agent_id")
+  sellerAgentId String @map("seller_agent_id")
+
+  status ServiceJobStatus @default(CREATED)
+
+  requirements Json
+  deliverables Json?
+
+  priceUsdc     BigInt  @map("price_usdc")
+  paymentTxHash String? @map("payment_tx_hash")
+  buybackTxHash String? @map("buyback_tx_hash")
+
+  buyerRating   Int?    @map("buyer_rating")
+  buyerFeedback String? @map("buyer_feedback")
+
+  acceptedAt  DateTime? @map("accepted_at")
+  deliveredAt DateTime? @map("delivered_at")
+  completedAt DateTime? @map("completed_at")
+  expiresAt   DateTime  @map("expires_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  offering    ServiceOffering @relation(fields: [offeringId], references: [id])
+  buyerAgent  Agent           @relation("BuyerJobs", fields: [buyerAgentId], references: [id])
+  sellerAgent Agent           @relation("SellerJobs", fields: [sellerAgentId], references: [id])
+
+  decisionLogs AgentDecisionLog[]
+
+  @@index([buyerAgentId, status])
+  @@index([sellerAgentId, status])
+  @@index([status, expiresAt])
+  @@map("service_jobs")
+}
+
+// ============================================================
+// Glass Box — RLAIF Telemetry (The Data Moat)
+// ============================================================
+
+model AgentDecisionLog {
+  id      String @id @default(uuid())
+  jobId   String @map("job_id")
+  agentId String @map("agent_id")
+
+  prompt          Json // The exact input/context given to the LLM or internal engine
+  response        Json // The exact raw output from the engine
+  modelUsed       String  @map("model_used") // e.g., 'claude-opus-4-6', 'openrouter-xyz', 'deterministic'
+  tokensUsed      Int     @default(0) @map("tokens_used")
+  executionTimeMs Int     @map("execution_time_ms")
+  isSuccess       Boolean @map("is_success")
+  errorMessage    String? @map("error_message")
+
+  // Hash & Anchor — Data Moat Protection (Holy Trinity Batch 1)
+  // SHA-256 hash of the canonicalized decision log. Written on-chain via
+  // ERC-8004 addValidation/anchorDecision for provenance proof without
+  // exposing raw RLAIF data (prompts, responses) to the public blockchain.
+  decisionLogHash String?   @map("decision_log_hash")
+  anchoredTxHash  String?   @map("anchored_tx_hash")
+  anchoredAt      DateTime? @map("anchored_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  job   ServiceJob @relation(fields: [jobId], references: [id])
+  agent Agent      @relation(fields: [agentId], references: [id])
+
+  @@index([jobId])
+  @@index([agentId, createdAt(sort: Desc)])
+  @@index([isSuccess])
+  @@map("agent_decision_logs")
+}
+
+// ============================================================
+// Social Hunter — Autonomous Lead Gen on Farcaster
+// ============================================================
+
+model SocialHuntLead {
+  id      String @id @default(cuid())
+  agentId String @map("agent_id")
+
+  // Target cast info
+  targetCastHash String @map("target_cast_hash") // Farcaster cast hash we're responding to
+  targetFid      Int    @map("target_fid")       // Author's Farcaster ID
+  targetUsername  String @map("target_username")  // Denormalized for display
+  targetText      String @db.Text @map("target_text") // Original cast content
+  channel         String?                         // Channel where cast was found (e.g. "ai", "crypto")
+
+  // Triage
+  status         SocialHuntStatus @default(IDENTIFIED)
+  triageScore    Int?             @map("triage_score")    // LLM score 1-10
+  triageReason   String?          @map("triage_reason")   // LLM reasoning
+  suggestedPitch String?          @db.Text @map("suggested_pitch") // LLM-generated reply text
+
+  // Engagement
+  replyCastHash String? @map("reply_cast_hash") // Our reply cast hash (from Neynar)
+  offeringSlug  String? @map("offering_slug")   // Which offering we pitched
+  pitchText     String? @db.Text @map("pitch_text") // Actual text sent
+
+  // Attribution
+  convertedJobId String? @map("converted_job_id") // ServiceJob.id if they hired us
+
+  // Timestamps
+  triagedAt   DateTime? @map("triaged_at")
+  repliedAt   DateTime? @map("replied_at")
+  convertedAt DateTime? @map("converted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  agent Agent @relation("SocialHuntLeads", fields: [agentId], references: [id])
+
+  @@unique([agentId, targetCastHash])          // One reply per cast per agent
+  @@index([agentId, targetFid, repliedAt])     // Cooldown lookups
+  @@index([agentId, status])                   // Status filtering
+  @@index([agentId, createdAt(sort: Desc)])    // Timeline queries
+  @@map("social_hunt_leads")
 }

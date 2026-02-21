@@ -18,6 +18,13 @@ import { createSchedulerWorker } from '../workers/scheduler.js';
 import { createScoutWorker } from '../workers/scout-worker.js';
 import { createTreasuryWorker } from '../workers/treasury-worker.js';
 import { createFeeDistributorWorker } from '../workers/fee-distributor.js';
+import { createServiceJobWorker, scheduleServiceJobMaintenance } from '../workers/service-job-worker.js';
+import {
+  createServiceExecutorWorker,
+  scheduleServiceExecutor,
+  type AgentExecutionContext,
+} from '../workers/service-executor.js';
+import { createSocialHunterWorker, scheduleSocialHunter } from '../workers/social-hunter-worker.js';
 import { getStrategy } from './strategies/posting.js';
 
 const METRICS_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -87,6 +94,7 @@ async function loadAndScheduleAgents(
           persona,
           signerUuid: agent.signerUuid,
           fid: agent.fid ?? 0,
+          walletAddress: agent.walletAddress ?? '',
           strategy,
         });
 
@@ -301,9 +309,106 @@ async function bootstrap(): Promise<RuntimeContext> {
     logger.info('Skipping financial workers — BaseChainClient not available');
   }
 
+  // 5c. Initialize service job maintenance worker (always-on, no chain dependency)
+  const serviceJobMaintenance = createServiceJobWorker(redis);
+  await scheduleServiceJobMaintenance(serviceJobMaintenance.queue);
+  logger.info('Service job maintenance worker initialized (expire check: 60s)');
+
+  // 5d. Initialize service job executor (autonomous fulfillment loop)
+  //
+  // The executor polls for ACCEPTED jobs assigned to locally-running agents,
+  // routes them through the SkillExecutor, and settles via the PATCH API.
+  // This closes the sovereign economy loop: agents fulfill jobs autonomously.
+  //
+  // getLocalAgents() is a live callback — it reads from the AgentEngine's
+  // running agents at poll time, so newly started agents are picked up
+  // automatically without restarting the executor.
+  const ceosApiUrl = process.env.CEOS_API_URL ?? 'http://localhost:3000';
+
+  // Load wallet addresses and personas from the database for the executor.
+  //
+  // In PRODUCTION: Only agents that are currently running in THIS runtime
+  // instance and have a wallet address are eligible for autonomous job
+  // execution. This ensures sovereignty — the agent process that accepted
+  // the job is the one that fulfills it.
+  //
+  // In DEMO_MODE: All ACTIVE agents with a wallet address are eligible,
+  // regardless of whether they're "running" in the posting engine. The
+  // posting engine requires a Farcaster signer (signerUuid) for social
+  // posting, but the service executor only needs a wallet + persona to
+  // fulfill computational jobs. Without this bypass, demo agents with
+  // signerUuid: null are invisible to the executor and jobs stay ACCEPTED.
+  const getLocalAgentsWithWallets = async (): Promise<AgentExecutionContext[]> => {
+    let agents;
+
+    if (DEMO_MODE) {
+      // GOD MODE: Treat ALL active agents as "local" for execution
+      agents = await prisma.agent.findMany({
+        where: { status: 'ACTIVE', walletAddress: { not: null } },
+        select: { id: true, walletAddress: true, persona: true },
+      });
+    } else {
+      // Production: Only agents running in this runtime instance
+      const runningIds = engine.getRunningAgentIds();
+      if (runningIds.length === 0) return [];
+
+      agents = await prisma.agent.findMany({
+        where: { id: { in: runningIds } },
+        select: { id: true, walletAddress: true, persona: true },
+      });
+    }
+
+    return agents
+      .filter((a) => a.walletAddress)
+      .map((a) => ({
+        agentId: a.id,
+        walletAddress: a.walletAddress!,
+        persona: typeof a.persona === 'string'
+          ? a.persona
+          : (a.persona as Record<string, unknown>)?.description as string ?? '',
+      }));
+  };
+
+  // Cache local agent contexts and refresh every poll cycle
+  let cachedAgentContexts: AgentExecutionContext[] = [];
+  const refreshAgentContexts = async () => {
+    try {
+      cachedAgentContexts = await getLocalAgentsWithWallets();
+    } catch (err) {
+      logger.error(
+        { error: err instanceof Error ? err.message : String(err) },
+        'Failed to refresh executor agent contexts',
+      );
+    }
+  };
+
+  // Initial load
+  await refreshAgentContexts();
+
+  const serviceExecutor = createServiceExecutorWorker(
+    redis,
+    skillExecutor,
+    () => cachedAgentContexts,
+    ceosApiUrl,
+  );
+  await scheduleServiceExecutor(serviceExecutor.queue);
+  logger.info('Service job executor initialized (poll: 15s)');
+
+  // 5e. Initialize Social Hunter worker (autonomous lead gen on Farcaster)
+  const socialHunter = createSocialHunterWorker(redis, neynar, openrouter);
+  await scheduleSocialHunter(socialHunter.queue, prisma);
+  logger.info('Social Hunter worker initialized (poll: 5m)');
+
+  // Refresh agent contexts alongside the agent poll
+  const executorRefreshTimer = setInterval(() => {
+    if (!isShuttingDown) {
+      void refreshAgentContexts();
+    }
+  }, AGENT_POLL_INTERVAL_MS);
+
   logger.info('BullMQ workers initialized');
 
-  // 5c. Initialize metrics scheduling queue
+  // 5e. Initialize metrics scheduling queue
   const metricsQueue = new Queue('agent-metrics', { connection: redis });
   logger.info('Metrics scheduling queue initialized');
 
@@ -340,6 +445,7 @@ async function bootstrap(): Promise<RuntimeContext> {
       clearInterval(agentPollTimer);
       agentPollTimer = null;
     }
+    clearInterval(executorRefreshTimer);
 
     const shutdownTimeout = setTimeout(() => {
       logger.error('Shutdown timed out after 30s, forcing exit');
@@ -361,6 +467,9 @@ async function bootstrap(): Promise<RuntimeContext> {
       if (scoutWorker) workerClosePromises.push(scoutWorker.close());
       if (treasuryWorker) workerClosePromises.push(treasuryWorker.close());
       if (feeDistributorWorker) workerClosePromises.push(feeDistributorWorker.close());
+      workerClosePromises.push(serviceJobMaintenance.shutdown());
+      workerClosePromises.push(serviceExecutor.shutdown());
+      workerClosePromises.push(socialHunter.shutdown());
       await Promise.allSettled(workerClosePromises);
       logger.info('Workers shutdown complete');
 
@@ -433,7 +542,7 @@ async function bootstrap(): Promise<RuntimeContext> {
   runtimeContext = context;
 
   const runningAgents = engine.getRunningAgentIds();
-  const activeWorkers = ['content', 'metrics', 'posting', 'scheduler'];
+  const activeWorkers = ['content', 'metrics', 'posting', 'scheduler', 'service-maintenance', 'service-executor', 'social-hunter'];
   if (scoutWorker) activeWorkers.push('scout', 'treasury', 'fee-distributor');
   logger.info({
     workers: activeWorkers,
