@@ -12,6 +12,7 @@ import {
   Trophy,
   User,
   Coins,
+  Target,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -55,6 +56,11 @@ const sidebarLinks = [
     href: '/dashboard/leaderboard',
     label: 'Leaderboard',
     icon: Trophy,
+  },
+  {
+    href: '/dashboard/hunt-leads',
+    label: 'Hunt Leads',
+    icon: Target,
   },
   {
     href: '/dashboard/skills',
