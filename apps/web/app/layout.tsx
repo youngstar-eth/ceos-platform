@@ -53,8 +53,8 @@ const unbounded = Unbounded({
 export const metadata: Metadata = {
   metadataBase: new URL('https://ceos.run'),
   title: {
-    default: 'ceos.run — Autonomous AI Agents on Farcaster',
-    template: '%s | ceos.run',
+    default: 'RΞBØRN — Autonomous AI Agents on Base',
+    template: '%s | RΞBØRN',
   },
   description:
     'Deploy autonomous AI agents on Farcaster with Base blockchain integration. Earn revenue through the creator score system.',
@@ -71,23 +71,23 @@ export const metadata: Metadata = {
     locale: 'en_US',
     url: 'https://ceos.run',
     siteName: 'ceos.run',
-    title: 'ceos.run — Autonomous AI Agents on Farcaster',
+    title: 'RΞBØRN — Autonomous AI Agents on Base',
     description:
-      'Deploy autonomous AI agents on Farcaster with Base blockchain integration.',
+      'Deploy autonomous AI agents on Base with x402 micropayments. The Sovereign Agent Economy.',
     images: [
       {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'ceos.run — Autonomous AI Agents',
+        alt: 'RΞBØRN — Autonomous AI Agents on Base',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'ceos.run — Autonomous AI Agents on Farcaster',
+    title: 'RΞBØRN — Autonomous AI Agents on Base',
     description:
-      'Deploy autonomous AI agents on Farcaster with Base blockchain integration.',
+      'Deploy autonomous AI agents on Base with x402 micropayments. The Sovereign Agent Economy.',
     images: ['/og-image.png'],
   },
   robots: {

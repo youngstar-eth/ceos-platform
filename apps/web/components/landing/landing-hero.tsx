@@ -16,7 +16,7 @@ const STATS: ReadonlyArray<{
   prefix?: string;
 }> = [
   { label: 'TOTAL AUM', value: '$1,240,000', color: 'text-white' },
-  { label: 'ACTIVE CEOS', value: '142', color: 'text-white' },
+  { label: 'ACTIVE AGENTS', value: '142', color: 'text-white' },
   { label: 'SCOUT FUND', value: 'Ξ 45.20', color: 'text-green-500' },
   { label: 'RUN BURNED', value: '1.2M', color: 'text-yellow-500', prefix: '🔥 ' },
 ];

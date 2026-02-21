@@ -11,6 +11,8 @@ import StakingRewardsArtifact from '@/lib/abis/StakingRewards.json';
 import CreatorScoreArtifact from '@/lib/abis/CreatorScore.json';
 import RevenuePoolArtifact from '@/lib/abis/RevenuePool.json';
 import AgentTreasuryArtifact from '@/lib/abis/AgentTreasury.json';
+import AgentPaymasterArtifact from '@/lib/abis/AgentPaymaster.json';
+import CeosAgentIdentityArtifact from '@/lib/abis/CeosAgentIdentity.json';
 
 // ── Contract Addresses (from env vars, populated by deploy script) ───
 export const CONTRACT_ADDRESSES = {
@@ -23,6 +25,11 @@ export const CONTRACT_ADDRESSES = {
   erc8004Registry: (process.env.NEXT_PUBLIC_ERC8004_REGISTRY_ADDRESS?.trim() ?? '0x') as Address,
   x402Gate: (process.env.NEXT_PUBLIC_X402_GATE_ADDRESS?.trim() ?? '0x') as Address,
   usdc: (process.env.NEXT_PUBLIC_USDC_CONTRACT?.trim() ?? '0x036CbD53842c5426634e7929541eC2318f3dCF7e') as Address,
+  // Agent Identity & Paymaster (V1 Smart Contracts)
+  agentPaymaster: (process.env.NEXT_PUBLIC_AGENT_PAYMASTER_ADDRESS?.trim() ?? '0x') as Address,
+  ceosAgentIdentity: (process.env.NEXT_PUBLIC_CEOS_AGENT_IDENTITY_ADDRESS?.trim() ?? '0x') as Address,
+  // RΞBØRN Phase 1 NFT Gate (ERC-721)
+  rebornNft: (process.env.NEXT_PUBLIC_REBORN_NFT_ADDRESS?.trim() ?? '0x03B4fCBb8Fe0753af22efEaAe8F5E0e7B04CdA46') as Address,
   // v2 Financial Engine
   runToken: (process.env.NEXT_PUBLIC_RUN_TOKEN_ADDRESS?.trim() ?? '0x') as Address,
   stakingRewards: (process.env.NEXT_PUBLIC_STAKING_REWARDS_ADDRESS?.trim() ?? '0x') as Address,
@@ -38,6 +45,8 @@ export const STAKING_REWARDS_ABI = StakingRewardsArtifact.abi as typeof StakingR
 export const CREATOR_SCORE_ABI = CreatorScoreArtifact.abi as typeof CreatorScoreArtifact.abi;
 export const REVENUE_POOL_ABI = RevenuePoolArtifact.abi as typeof RevenuePoolArtifact.abi;
 export const AGENT_TREASURY_ABI = AgentTreasuryArtifact.abi as typeof AgentTreasuryArtifact.abi;
+export const AGENT_PAYMASTER_ABI = AgentPaymasterArtifact.abi as typeof AgentPaymasterArtifact.abi;
+export const CEOS_AGENT_IDENTITY_ABI = CeosAgentIdentityArtifact.abi as typeof CeosAgentIdentityArtifact.abi;
 
 // ── Minimal ERC20 ABI (for approve/allowance on staking tokens) ──────
 export const ERC20_ABI = [
@@ -74,6 +83,17 @@ export const ERC20_ABI = [
     name: 'decimals',
     inputs: [],
     outputs: [{ name: '', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+] as const;
+
+// ── Minimal ERC-721 ABI (for RΞBØRN token-gate balanceOf check) ──────
+export const ERC721_BALANCE_ABI = [
+  {
+    type: 'function',
+    name: 'balanceOf',
+    inputs: [{ name: 'owner', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
   },
 ] as const;
@@ -134,5 +154,19 @@ export function getAgentRegistryContract() {
   return {
     address: CONTRACT_ADDRESSES.agentRegistry,
     abi: AGENT_REGISTRY_ABI,
+  } as const;
+}
+
+export function getAgentPaymasterContract() {
+  return {
+    address: CONTRACT_ADDRESSES.agentPaymaster,
+    abi: AGENT_PAYMASTER_ABI,
+  } as const;
+}
+
+export function getCeosAgentIdentityContract() {
+  return {
+    address: CONTRACT_ADDRESSES.ceosAgentIdentity,
+    abi: CEOS_AGENT_IDENTITY_ABI,
   } as const;
 }

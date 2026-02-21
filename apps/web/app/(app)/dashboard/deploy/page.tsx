@@ -8,7 +8,7 @@ export default function DeployPage() {
       <div>
         <h1 className="text-3xl font-bold">Deploy Agent</h1>
         <p className="text-muted-foreground mt-1">
-          Configure and deploy your autonomous AI agent on Farcaster
+          Configure and deploy your autonomous AI agent on Base
         </p>
       </div>
 

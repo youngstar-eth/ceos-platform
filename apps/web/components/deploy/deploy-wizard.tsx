@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Rocket, Check, Wallet, Loader2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Rocket, Check, Wallet, Loader2, Shield, Lock, ExternalLink } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,6 +15,7 @@ import { useAgentDeploy } from '@/hooks/use-agent-deploy';
 import { type DeployStatus } from '@/hooks/use-deploy';
 import { syncDeployedAgent } from '@/app/actions/sync-agent';
 import { cn } from '@/lib/utils';
+import { useRebornGate } from '@/hooks/use-reborn-gate';
 
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
 
@@ -60,6 +61,9 @@ export function DeployWizard() {
 
   const { address } = useAccount();
   const router = useRouter();
+
+  // RΞBØRN NFT Gate — VIP check
+  const { isVip, isLoading: isGateLoading } = useRebornGate();
 
   const status = DEMO_MODE ? demoStatus : onChainStatus;
   const error = DEMO_MODE ? demoError : onChainError;
@@ -269,7 +273,7 @@ export function DeployWizard() {
     if (isDeploying) return 'Preparing...';
     if (!address) return 'Connect Wallet First';
     if (DEMO_MODE) return 'Deploy Agent (Demo)';
-    return 'Deploy Agent (0.005 ETH)';
+    return isVip ? 'Deploy Agent — 50 USDC Fuel' : 'RΞBØRN Pass Required';
   };
 
   // ── Granular button icon based on deploy stage ──
@@ -324,6 +328,59 @@ export function DeployWizard() {
           </div>
         ))}
       </div>
+
+      {/* RΞBØRN VIP Gate — shown on deploy step */}
+      {step === 3 && !isGateLoading && (
+        isVip ? (
+          <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-6 space-y-4">
+            <div className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-yellow-400" />
+              <h3 className="text-lg font-bold text-yellow-400 tracking-wider">
+                RΞBØRN VIP ACCESS GRANTED
+              </h3>
+            </div>
+            <p className="text-sm text-gray-400">
+              Web3 Economy REBORNs on ceos.run
+            </p>
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div className="border border-white/10 rounded-lg p-3">
+                <p className="text-xs text-gray-500 font-mono">DEPLOYMENT FEE</p>
+                <p className="text-lg font-bold text-green-400">$0</p>
+                <p className="text-[10px] text-gray-600">Waived for VIPs</p>
+              </div>
+              <div className="border border-white/10 rounded-lg p-3">
+                <p className="text-xs text-gray-500 font-mono">SERVER HOSTING</p>
+                <p className="text-lg font-bold text-green-400">$0</p>
+                <p className="text-[10px] text-gray-600">3 Months Free</p>
+              </div>
+              <div className="border border-yellow-500/30 rounded-lg p-3 bg-yellow-500/5">
+                <p className="text-xs text-gray-500 font-mono">x402 FUEL</p>
+                <p className="text-lg font-bold text-yellow-400">50 USDC</p>
+                <p className="text-[10px] text-gray-600">Agent Treasury</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-6 space-y-4 text-center">
+            <Lock className="h-8 w-8 text-red-400 mx-auto" />
+            <h3 className="text-lg font-bold text-red-400 font-mono tracking-wider">
+              ACCESS DENIED
+            </h3>
+            <p className="text-sm text-gray-400">
+              Phase 1 is exclusive to RΞBØRN NFT holders.
+            </p>
+            <a
+              href="https://opensea.io"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-lg font-mono text-sm tracking-wider transition-colors"
+            >
+              Acquire RΞBØRN Pass
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          </div>
+        )
+      )}
 
       {/* Step content */}
       {step < 3 ? (
@@ -427,7 +484,7 @@ export function DeployWizard() {
         ) : (
           <Button
             onClick={handleDeploy}
-            disabled={isDeploying || isConfirmed || isFullyComplete || syncStatus === 'syncing' || !address}
+            disabled={isDeploying || isConfirmed || isFullyComplete || syncStatus === 'syncing' || !address || (!isVip && !DEMO_MODE)}
             className="brand-gradient text-white hover:opacity-90"
           >
             {getButtonIcon()}

@@ -33,7 +33,7 @@ export function HeroRunner() {
                         <span className="block text-white">HUMANS</span>
                         <span className="block text-white/50">WALK.</span>
                         <span className="block bg-clip-text text-transparent bg-exec-gold-gradient mt-2">
-                            CEOS RUN.
+                            RΞBØRN.
                         </span>
                     </h1>
                 </motion.div>
