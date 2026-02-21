@@ -6,6 +6,9 @@ import { ContentPipeline } from './core/content-pipeline.js';
 import { AgentScheduler } from './core/scheduler.js';
 import { AgentEngine } from './core/agent-engine.js';
 import { SkillExecutor, SkillType } from './core/skill-executor.js';
+import { ToolRegistry } from './core/tool-registry.js';
+import { registerDefaultTools } from './core/tool-implementations.js';
+import { TreasuryLedger, type TreasuryDbAdapter } from './core/treasury-ledger.js';
 import { TrendingStrategy } from './strategies/trending.js';
 import { OpenRouterClient } from './integrations/openrouter.js';
 import { FalAiClient } from './integrations/fal-ai.js';
@@ -201,7 +204,53 @@ async function bootstrap(): Promise<RuntimeContext> {
   const pipeline = new ContentPipeline(openrouter, falAi);
   const scheduler = new AgentScheduler(redis);
   const engine = new AgentEngine(pipeline, scheduler);
-  const skillExecutor = new SkillExecutor();
+
+  // 4a. Tool Registry + Treasury Ledger (for dynamic ReAct execution)
+  const toolRegistry = new ToolRegistry();
+  registerDefaultTools(toolRegistry);
+  logger.info({ toolCount: toolRegistry.getToolCount() }, 'Tool registry initialized');
+
+  // Prisma-backed treasury adapter
+  //
+  // Phase 1: Uses walletSessionLimit (Decimal 18,6) as the treasury balance
+  // proxy, converted to micro-USDC (BigInt). This avoids a schema migration.
+  //
+  // TODO: PHASE 2 — Add dedicated `treasury_balance BigInt` column and
+  // `AgentDecisionLog` table for full RLAIF audit trail.
+  const treasuryDbAdapter: TreasuryDbAdapter = {
+    async getBalance(agentId: string): Promise<bigint> {
+      const agent = await prisma.agent.findUnique({
+        where: { id: agentId },
+        select: { walletSessionLimit: true },
+      });
+      // walletSessionLimit is Decimal(18,6), default 50 (= 50 USDC)
+      // Convert to micro-USDC: multiply by 1_000_000
+      const decimalValue = Number(agent?.walletSessionLimit ?? 50);
+      return BigInt(Math.floor(decimalValue * 1_000_000));
+    },
+    async setBalance(agentId: string, balanceMicroUsdc: bigint): Promise<void> {
+      // Convert micro-USDC back to Decimal for storage
+      const decimalValue = Number(balanceMicroUsdc) / 1_000_000;
+      await prisma.agent.update({
+        where: { id: agentId },
+        data: { walletSessionLimit: decimalValue },
+      });
+    },
+    async recordDeduction(record): Promise<void> {
+      // TODO: PHASE 2 — Write to AgentDecisionLog table for RLAIF
+      logger.debug(
+        {
+          agentId: record.agentId,
+          toolId: record.toolId,
+          cost: record.costMicroUsdc.toString(),
+        },
+        'Treasury deduction recorded (in-memory only for Phase 1)',
+      );
+    },
+  };
+
+  const treasuryLedger = new TreasuryLedger(treasuryDbAdapter);
+  const skillExecutor = new SkillExecutor(openrouter, toolRegistry, treasuryLedger);
 
   // Register built-in skills
   skillExecutor.registerSkill({

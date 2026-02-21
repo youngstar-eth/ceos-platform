@@ -28,6 +28,18 @@ interface GenerateTextResult {
   tokensUsed: number;
 }
 
+/**
+ * Result from generateWithTools() — returns the raw ChatCompletionMessage
+ * which may contain tool_calls[] (when the LLM wants to invoke functions)
+ * or plain text content (when the LLM is done reasoning).
+ */
+interface GenerateWithToolsResult {
+  message: OpenAI.ChatCompletionMessage;
+  finishReason: string;
+  model: string;
+  tokensUsed: number;
+}
+
 interface TokenUsage {
   totalTokens: number;
   promptTokens: number;
@@ -99,6 +111,110 @@ export class OpenRouterClient {
       );
       throw new Error(`Failed to parse JSON response: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  /**
+   * Generate a chat completion with OpenAI-compatible function calling (tools).
+   *
+   * Unlike generateText(), this method:
+   * - Accepts a full message history (for multi-turn ReAct loops)
+   * - Passes `tools` to the API so the LLM can request function calls
+   * - Returns the raw ChatCompletionMessage (which may contain tool_calls[])
+   * - Includes model fallback + retry logic
+   */
+  async generateWithTools(
+    messages: OpenAI.ChatCompletionMessageParam[],
+    tools: OpenAI.ChatCompletionTool[],
+    options?: GenerateTextOptions,
+  ): Promise<GenerateWithToolsResult> {
+    const model = options?.model ?? DEFAULT_MODEL;
+    const modelsToTry = [model, ...FALLBACK_MODELS.filter((m) => m !== model)];
+
+    let lastError: Error | null = null;
+
+    for (const currentModel of modelsToTry) {
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+          return await this.callOpenRouterWithTools(messages, tools, currentModel, options);
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          const isRateLimit = this.isRateLimitError(error);
+          const isRetryable = isRateLimit || this.isRetryableError(error);
+
+          if (!isRetryable || attempt === MAX_RETRIES - 1) {
+            this.logger.warn(
+              { model: currentModel, attempt: attempt + 1, error: lastError.message },
+              'Tool-calling model attempt failed',
+            );
+            break; // Try next model
+          }
+
+          const delay = isRateLimit
+            ? this.getRateLimitDelay(error, attempt)
+            : BASE_DELAY_MS * Math.pow(2, attempt);
+
+          this.logger.warn(
+            { model: currentModel, attempt: attempt + 1, delay, isRateLimit },
+            'Retrying tool call after error',
+          );
+
+          await this.sleep(delay);
+        }
+      }
+    }
+
+    throw lastError ?? new Error('All models failed for tool-calling generation');
+  }
+
+  private async callOpenRouterWithTools(
+    messages: OpenAI.ChatCompletionMessageParam[],
+    tools: OpenAI.ChatCompletionTool[],
+    model: string,
+    options?: GenerateTextOptions,
+  ): Promise<GenerateWithToolsResult> {
+    this.logger.debug(
+      { model, messageCount: messages.length, toolCount: tools.length },
+      'Calling OpenRouter with tools',
+    );
+
+    const response = await this.client.chat.completions.create({
+      model,
+      messages,
+      tools: tools.length > 0 ? tools : undefined,
+      max_tokens: options?.maxTokens ?? 1024,
+      temperature: options?.temperature ?? 0.3,
+    });
+
+    const choice = response.choices[0];
+    if (!choice) {
+      throw new Error('No choices returned from OpenRouter');
+    }
+
+    const usage = response.usage;
+    const tokensUsed = usage?.total_tokens ?? 0;
+
+    // Track cumulative usage
+    this.tokenUsage.totalTokens += tokensUsed;
+    this.tokenUsage.promptTokens += usage?.prompt_tokens ?? 0;
+    this.tokenUsage.completionTokens += usage?.completion_tokens ?? 0;
+
+    this.logger.debug(
+      {
+        model,
+        tokensUsed,
+        finishReason: choice.finish_reason,
+        hasToolCalls: !!choice.message.tool_calls?.length,
+        toolCallCount: choice.message.tool_calls?.length ?? 0,
+      },
+      'OpenRouter tool response received',
+    );
+
+    return {
+      message: choice.message,
+      finishReason: choice.finish_reason ?? 'stop',
+      model: response.model ?? model,
+      tokensUsed,
+    };
   }
 
   getTokenUsage(): TokenUsage {
@@ -219,3 +335,5 @@ export class OpenRouterClient {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
+
+export type { GenerateTextOptions, GenerateTextResult, GenerateWithToolsResult, TokenUsage };
