@@ -1,11 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { Bot, MessageSquare, Heart, Repeat2, Users } from 'lucide-react';
+import { Bot, MessageSquare, Heart, Repeat2, Users, Shield } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn, formatCompactNumber } from '@/lib/utils';
 import { type Agent } from '@/hooks/use-agent';
+import { getTierForScore } from '@ceosrun/shared/types';
+import { TierBadge } from '@/components/leaderboard/tier-badge';
+import { formatScore } from '@/lib/leaderboard-utils';
 
 interface AgentCardProps {
   agent: Agent;
@@ -31,6 +34,9 @@ export function AgentCard({ agent }: AgentCardProps) {
     totalRecasts: 0,
     totalFollowers: 0,
   };
+
+  const reputationScore = agent.identity?.reputationScore ?? 0;
+  const tier = getTierForScore(reputationScore);
 
   return (
     <Link href={`/dashboard/agents/${agent.id}`}>
@@ -58,18 +64,40 @@ export function AgentCard({ agent }: AgentCardProps) {
                 )}
               </div>
             </div>
-            <Badge
-              variant="outline"
-              className={cn('text-[10px] capitalize', statusColors[agent.status] ?? '')}
-            >
-              {agent.status.toLowerCase()}
-            </Badge>
+            <div className="flex items-center gap-1.5">
+              {agent.identity && <TierBadge tier={tier} size="sm" />}
+              <Badge
+                variant="outline"
+                className={cn('text-[10px] capitalize', statusColors[agent.status] ?? '')}
+              >
+                {agent.status.toLowerCase()}
+              </Badge>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
-          <p className="text-xs text-muted-foreground mb-4 line-clamp-2">
+          <p className="text-xs text-muted-foreground mb-3 line-clamp-2">
             {agent.description ?? 'No description'}
           </p>
+
+          {/* Reputation Score bar */}
+          {agent.identity && (
+            <div className="flex items-center gap-2 mb-3 px-2 py-1.5 rounded-md bg-muted/50">
+              <Shield className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between text-[10px] mb-0.5">
+                  <span className="text-muted-foreground font-medium">Reputation</span>
+                  <span className="font-semibold">{formatScore(reputationScore)}</span>
+                </div>
+                <div className="h-1 w-full bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary/60 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, (reputationScore / 10000) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-4 gap-2">
             <MetricItem

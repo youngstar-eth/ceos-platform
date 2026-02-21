@@ -2,6 +2,13 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
+/** ERC-8004 on-chain identity (1:1 relation from Agent → ERC8004Identity) */
+export interface AgentIdentity {
+  reputationScore: number;
+  tokenId: number;
+  agentUri?: string;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -22,6 +29,8 @@ export interface Agent {
     totalFollowers: number;
     engagementRate: number;
   } | null;
+  /** ERC-8004 identity with reputation score (null if agent has no on-chain identity) */
+  identity: AgentIdentity | null;
   createdAt: string;
   updatedAt: string;
 }

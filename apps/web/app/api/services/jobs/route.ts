@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { Prisma } from "@prisma/client";
+import { Prisma, ServiceJobStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { successResponse, errorResponse } from "@/lib/api-utils";
@@ -7,6 +7,9 @@ import { Errors } from "@/lib/errors";
 import { verifyWalletSignature } from "@/lib/auth";
 import { authenticatedLimiter } from "@/lib/rate-limit";
 import { createServiceJobSchema } from "@/lib/validation";
+import { parseX402Header, verifyServicePayment } from "@/lib/x402-service";
+
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 /**
  * POST /api/services/jobs
@@ -45,7 +48,9 @@ export async function POST(request: NextRequest) {
     });
 
     if (!buyerAgent) throw Errors.notFound("Buyer agent");
-    if (buyerAgent.creatorAddress !== address) {
+
+    // GOD MODE: In demo mode, skip ownership check — any wallet can use demo agents.
+    if (!DEMO_MODE && buyerAgent.creatorAddress !== address) {
       throw Errors.forbidden("Only the agent creator can purchase services");
     }
     if (buyerAgent.status !== "ACTIVE") {
@@ -60,18 +65,61 @@ export async function POST(request: NextRequest) {
     // 4. Calculate expiry
     const expiresAt = new Date(Date.now() + data.ttlMinutes * 60 * 1000);
 
-    // TODO: x402 payment verification — validate payment header / on-chain tx
-    // const paymentTxHash = await verifyX402Payment(request, offering.priceUsdc);
+    // ── x402 Payment Verification (Pay-Before-Create) ─────────────────
+    //
+    // Parse the X-PAYMENT header containing the signed EIP-3009 USDC
+    // transfer. If present, verify via the CDP facilitator before
+    // creating the job. The USDC is transferred on-chain first.
+    //
+    let paymentTxHash: string | null = null;
+
+    const paymentData = parseX402Header(request);
+    if (paymentData) {
+      const verified = await verifyServicePayment(
+        paymentData,
+        offering.priceUsdc,
+        "/api/services/jobs",
+      );
+      paymentTxHash = verified.txHash;
+
+      logger.info(
+        {
+          paymentTxHash,
+          payer: verified.payer,
+          amount: verified.amount.toString(),
+          offeringSlug: offering.slug,
+        },
+        "x402 service payment verified — creating job",
+      );
+    } else {
+      // No X-PAYMENT header — log warning but allow job creation.
+      // In production, this gate should be strict (throw if missing).
+      // Kept permissive during development/testnet phase.
+      logger.warn(
+        { offeringSlug: offering.slug, buyerAgentId: data.buyerAgentId },
+        "No X-PAYMENT header — job created without on-chain payment verification",
+      );
+    }
 
     // 5. Create job + increment totalJobs atomically
+    //
+    // In DEMO_MODE, auto-accept the job so the BullMQ Service Executor
+    // picks it up immediately. In production, jobs start as CREATED and
+    // require explicit seller acceptance via PATCH.
+    const initialStatus: ServiceJobStatus = DEMO_MODE ? "ACCEPTED" : "CREATED";
+    const acceptedAt = DEMO_MODE ? new Date() : undefined;
+
     const [job] = await prisma.$transaction([
       prisma.serviceJob.create({
         data: {
           offeringId: offering.id,
           buyerAgentId: data.buyerAgentId,
           sellerAgentId: offering.sellerAgentId,
+          status: initialStatus,
           requirements: data.requirements as Prisma.InputJsonValue,
           priceUsdc: offering.priceUsdc,
+          paymentTxHash,
+          acceptedAt,
           expiresAt,
         },
         include: {
@@ -95,15 +143,14 @@ export async function POST(request: NextRequest) {
         offeringSlug: offering.slug,
         buyerAgentId: data.buyerAgentId,
         priceUsdc: offering.priceUsdc.toString(),
+        paymentTxHash,
+        status: initialStatus,
+        demoMode: DEMO_MODE,
       },
-      "Service job created",
+      DEMO_MODE
+        ? "Service job created with ACCEPTED status (demo mode — auto-accepted for BullMQ)"
+        : "Service job created",
     );
-
-    // TODO: RLAIF — log service purchase decision for training data
-
-    // Buyback & Burn: 2% of service payment → $RUN buyback
-    // TODO(phase-3): const buybackAmount = offering.priceUsdc * 2n / 100n;
-    // await executeBuybackAndBurn(buybackAmount);
 
     return successResponse(
       { ...job, priceUsdc: job.priceUsdc.toString() },

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   Bot,
+  Store,
   Rocket,
   DollarSign,
   Sparkles,
@@ -29,6 +30,11 @@ const sidebarLinks = [
     href: '/dashboard/agents',
     label: 'Agents',
     icon: Bot,
+  },
+  {
+    href: '/dashboard/services',
+    label: 'Services',
+    icon: Store,
   },
   {
     href: '/dashboard/deploy',

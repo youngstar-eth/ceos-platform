@@ -11,11 +11,14 @@
  * - Slug-based job creation with client-side TTL
  * - Denormalized stats on offerings (no _count joins)
  * - Seller denormalization on jobs
+ * - x402 payment signing: createJob() signs EIP-3009 USDC transfer
+ *   and attaches the X-PAYMENT header for Pay-Before-Create flow
  *
  * This is the "consumer side" of the x402 Agent Economy.
  */
 import pino from 'pino';
 import { logger as rootLogger } from '../config.js';
+import type { X402SignedPayment } from './base-chain.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -90,18 +93,45 @@ interface PaginatedApiResponse<T> {
   error?: { code: string; message: string };
 }
 
+/**
+ * Callback signature for signing x402 service payments.
+ * The BaseChainClient.signX402ServicePayment method satisfies this type.
+ *
+ * @param priceUsdc - Amount in USDC micro-units (6 decimals)
+ * @param payToAddress - Protocol resource wallet address
+ * @param usdcContract - USDC contract address on Base
+ */
+export type X402SignFn = (
+  priceUsdc: bigint,
+  payToAddress: `0x${string}`,
+  usdcContract: `0x${string}`,
+) => Promise<X402SignedPayment>;
+
 // ─── Client ─────────────────────────────────────────────────────────────────
 
 export class ServiceClient {
   private readonly baseUrl: string;
   private readonly agentId: string;
   private readonly walletAddress: string;
+  private readonly signPayment: X402SignFn | null;
   private readonly logger: pino.Logger;
 
-  constructor(baseUrl: string, agentId: string, walletAddress: string) {
+  /**
+   * @param baseUrl - The ceos.run API base URL
+   * @param agentId - The agent's ID (bound per-instance)
+   * @param walletAddress - The agent's wallet address (for auth headers)
+   * @param signPayment - Optional x402 signing function from BaseChainClient
+   */
+  constructor(
+    baseUrl: string,
+    agentId: string,
+    walletAddress: string,
+    signPayment?: X402SignFn,
+  ) {
     this.baseUrl = baseUrl;
     this.agentId = agentId;
     this.walletAddress = walletAddress;
+    this.signPayment = signPayment ?? null;
     this.logger = rootLogger.child({ module: 'ServiceClient', agentId });
   }
 
@@ -152,20 +182,64 @@ export class ServiceClient {
    *
    * V2: Uses offeringSlug (not serviceId), client-side ttlMinutes,
    * and required `requirements` payload.
+   *
+   * x402 Payment Flow (Pay-Before-Create):
+   * If a signPayment function was provided AND priceUsdc + payTo are set,
+   * this method signs an EIP-3009 USDC transferWithAuthorization and
+   * attaches it as the X-PAYMENT header. The API will verify this via
+   * the CDP facilitator before creating the job.
    */
   async createJob(params: {
     offeringSlug: string;
     requirements: Record<string, unknown>;
     ttlMinutes?: number;
+    /** The offering price in USDC micro-units (for x402 signing) */
+    priceUsdc?: bigint;
+    /** The protocol resource wallet address (for x402 signing) */
+    payTo?: `0x${string}`;
+    /** The USDC contract address on Base (for x402 signing) */
+    usdcContract?: `0x${string}`;
   }): Promise<ServiceJob> {
     const url = `${this.baseUrl}/api/services/jobs`;
 
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-wallet-address': this.walletAddress,
+    };
+
+    // Sign x402 payment if signing function and price are available
+    if (this.signPayment && params.priceUsdc && params.payTo && params.usdcContract) {
+      try {
+        const payment = await this.signPayment(
+          params.priceUsdc,
+          params.payTo,
+          params.usdcContract,
+        );
+        headers['x-payment'] = JSON.stringify(payment);
+
+        this.logger.info(
+          {
+            offeringSlug: params.offeringSlug,
+            amount: params.priceUsdc.toString(),
+            payer: payment.payload.from,
+          },
+          'x402 payment signed for service purchase',
+        );
+      } catch (err) {
+        this.logger.error(
+          {
+            offeringSlug: params.offeringSlug,
+            error: err instanceof Error ? err.message : String(err),
+          },
+          'Failed to sign x402 payment — proceeding without payment header',
+        );
+        // Proceed without X-PAYMENT header — the API will reject if payment is required
+      }
+    }
+
     const res = await this.fetchJson<ApiResponse<ServiceJob>>(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-wallet-address': this.walletAddress,
-      },
+      headers,
       body: JSON.stringify({
         buyerAgentId: this.agentId,
         offeringSlug: params.offeringSlug,
@@ -183,6 +257,7 @@ export class ServiceClient {
         jobId: res.data.id,
         offeringSlug: params.offeringSlug,
         priceUsdc: res.data.priceUsdc,
+        paymentTxHash: res.data.paymentTxHash,
       },
       'Service job created',
     );

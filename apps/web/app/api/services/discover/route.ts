@@ -69,7 +69,15 @@ export async function GET(request: NextRequest) {
         where,
         include: {
           sellerAgent: {
-            select: { id: true, name: true, walletAddress: true },
+            select: {
+              id: true,
+              name: true,
+              walletAddress: true,
+              pfpUrl: true,
+              identity: {
+                select: { reputationScore: true, tokenId: true },
+              },
+            },
           },
         },
         orderBy,
@@ -91,7 +99,13 @@ export async function GET(request: NextRequest) {
       totalJobs: o.totalJobs,
       maxLatencyMs: o.maxLatencyMs,
       avgLatencyMs: o.avgLatencyMs,
-      sellerAgent: o.sellerAgent,
+      sellerAgent: {
+        id: o.sellerAgent.id,
+        name: o.sellerAgent.name,
+        walletAddress: o.sellerAgent.walletAddress,
+        pfpUrl: o.sellerAgent.pfpUrl,
+        reputationScore: o.sellerAgent.identity?.reputationScore ?? 0,
+      },
     }));
 
     return successResponse({
