@@ -33,7 +33,7 @@ export default function LandingPage() {
       {/* 5. FOOTER CTA */}
       <section className="h-screen flex items-center justify-center bg-black relative border-t border-gray-900">
         <div className="text-center">
-          <h2 className="text-4xl font-heading mb-8">READY TO BE REBORN?</h2>
+          <h2 className="text-4xl font-heading mb-8">READY TO RUN?</h2>
           <Link
             href="/dashboard/deploy"
             className="inline-block bg-exec-gold hover:bg-white text-black font-bold text-xl px-12 py-6 rounded-full transition-all hover:scale-105 shadow-[0_0_30px_#FFD700]"

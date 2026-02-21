@@ -28,8 +28,6 @@ export const CONTRACT_ADDRESSES = {
   // Agent Identity & Paymaster (V1 Smart Contracts)
   agentPaymaster: (process.env.NEXT_PUBLIC_AGENT_PAYMASTER_ADDRESS?.trim() ?? '0x') as Address,
   ceosAgentIdentity: (process.env.NEXT_PUBLIC_CEOS_AGENT_IDENTITY_ADDRESS?.trim() ?? '0x') as Address,
-  // RΞBØRN Phase 1 NFT Gate (ERC-721)
-  rebornNft: (process.env.NEXT_PUBLIC_REBORN_NFT_ADDRESS?.trim() ?? '0x03B4fCBb8Fe0753af22efEaAe8F5E0e7B04CdA46') as Address,
   // v2 Financial Engine
   runToken: (process.env.NEXT_PUBLIC_RUN_TOKEN_ADDRESS?.trim() ?? '0x') as Address,
   stakingRewards: (process.env.NEXT_PUBLIC_STAKING_REWARDS_ADDRESS?.trim() ?? '0x') as Address,
@@ -83,17 +81,6 @@ export const ERC20_ABI = [
     name: 'decimals',
     inputs: [],
     outputs: [{ name: '', type: 'uint8' }],
-    stateMutability: 'view',
-  },
-] as const;
-
-// ── Minimal ERC-721 ABI (for RΞBØRN token-gate balanceOf check) ──────
-export const ERC721_BALANCE_ABI = [
-  {
-    type: 'function',
-    name: 'balanceOf',
-    inputs: [{ name: 'owner', type: 'address' }],
-    outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
   },
 ] as const;

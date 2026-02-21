@@ -22,9 +22,9 @@ export function SceneHero({ progress }: { progress: MotionValue<number> }) {
         style={{ y: titleY, opacity: titleOpacity }}
         className="text-6xl md:text-8xl lg:text-9xl font-black font-heading text-center leading-none tracking-tight"
       >
-        <span className="text-white">R</span>
-        <span className="text-exec-gold">Ξ</span>
-        <span className="text-white">BØRN</span>
+        <span className="text-white">CEO</span>
+        <span className="text-exec-gold">$</span>
+        <span className="text-white/20">.RUN</span>
       </motion.h1>
 
       {/* Subtitle */}
@@ -34,7 +34,7 @@ export function SceneHero({ progress }: { progress: MotionValue<number> }) {
       >
         Autonomous AI Agents on Base.
         <br />
-        Deploy. Evolve. Transcend.
+        Deploy. Earn. Repeat.
       </motion.p>
 
       {/* Scroll hint */}

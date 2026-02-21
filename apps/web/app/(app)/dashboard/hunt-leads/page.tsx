@@ -15,7 +15,6 @@ import {
   Loader2,
   Filter,
   Zap,
-  Lock,
 } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import { Button } from '@/components/ui/button';
@@ -40,7 +39,6 @@ import {
   type ExecuteStatus,
 } from '@/hooks/use-agent-contracts';
 import { parseUnits } from 'viem';
-import { useRebornGate } from '@/hooks/use-reborn-gate';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -220,13 +218,11 @@ function LeadCard({
   onExecute,
   isExecuting,
   executeStatus,
-  isVip,
 }: {
   lead: SocialHuntLead;
   onExecute: (lead: SocialHuntLead) => void;
   isExecuting: boolean;
   executeStatus: ExecuteStatus;
-  isVip: boolean;
 }) {
   const isHighScore = (lead.triageScore ?? 0) >= 8;
   const farcasterUrl = `https://warpcast.com/${lead.targetUsername}`;
@@ -332,12 +328,10 @@ function LeadCard({
           <Button
             size="sm"
             onClick={() => onExecute(lead)}
-            disabled={isExecuting || !isVip}
+            disabled={isExecuting}
             className={cn(
               'font-mono text-[10px] tracking-widest border-0 h-7 px-3 rounded-sm uppercase font-bold',
-              !isVip
-                ? 'bg-white/20 text-white/40 cursor-not-allowed'
-                : isExecuting && executeStatus === 'confirmed'
+              isExecuting && executeStatus === 'confirmed'
                 ? 'bg-green-500 text-white hover:bg-green-500'
                 : 'bg-white text-black hover:bg-white/90',
             )}
@@ -359,11 +353,6 @@ function LeadCard({
                 {executeStatus === 'failed' && (
                   <><AlertTriangle className="h-3 w-3 mr-1" />Failed</>
                 )}
-              </>
-            ) : !isVip ? (
-              <>
-                <Lock className="h-3 w-3 mr-1" />
-                VIP Only
               </>
             ) : (
               <>
@@ -419,9 +408,6 @@ export default function HuntLeadsPage() {
     reset: resetExecute,
   } = useExecuteOnBase();
   const [executingLeadId, setExecutingLeadId] = useState<string | null>(null);
-
-  // RΞBØRN NFT Gate — VIP check
-  const { isVip, isLoading: isGateLoading } = useRebornGate();
 
   // Agent selection state
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
@@ -520,7 +506,7 @@ export default function HuntLeadsPage() {
       resetExecute();
       setExecutingLeadId(lead.id);
 
-      // 50 USDC deposit (6 decimals) — RΞBØRN VIP x402 fuel for agent treasury
+      // 50 USDC deposit (6 decimals) — x402 fuel for agent treasury
       const amount = parseUnits('50', 6);
 
       void executeOnBase({
@@ -685,25 +671,6 @@ export default function HuntLeadsPage() {
         </div>
       )}
 
-      {/* ── RΞBØRN VIP Gate Banner ─────────────────────────────── */}
-      {!isGateLoading && !isVip && (
-        <div className="flex items-center gap-3 border border-red-500/20 bg-red-500/5 rounded-sm px-4 py-3">
-          <Lock className="h-4 w-4 text-red-400 flex-shrink-0" />
-          <p className="font-mono text-xs text-white/50 flex-1">
-            <span className="text-red-400 font-bold">ACCESS DENIED:</span>{' '}
-            Phase 1 is exclusive to RΞBØRN NFT holders.
-          </p>
-          <a
-            href="https://opensea.io"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-mono text-[10px] text-yellow-400 hover:text-white underline tracking-wider flex-shrink-0 flex items-center gap-1"
-          >
-            ACQUIRE PASS <ExternalLink className="h-3 w-3" />
-          </a>
-        </div>
-      )}
-
       {/* ── Execute error banner ──────────────────────────────── */}
       {executeError && executeStatus === 'failed' && (
         <div className="flex items-center gap-2 border border-white/20 bg-red-500/5 rounded-sm px-4 py-2.5">
@@ -775,7 +742,6 @@ export default function HuntLeadsPage() {
               onExecute={handleExecute}
               isExecuting={executingLeadId === lead.id}
               executeStatus={executingLeadId === lead.id ? executeStatus : 'idle'}
-              isVip={isVip}
             />
           ))}
         </div>
